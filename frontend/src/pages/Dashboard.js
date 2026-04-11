@@ -10,6 +10,8 @@ import PerfilTab from '@/components/tabs/PerfilTab';
 import AdminPanel from '@/components/tabs/AdminPanel';
 import MensajesTab from '@/components/tabs/MensajesTab';
 import MomentoTab from '@/components/tabs/MomentoTab';
+import RecargasTab from '@/components/tabs/RecargasTab';
+import VIPTab from '@/components/tabs/VIPTab';
 import { getAristocratInfo } from '@/lib/aristocrat';
 
 const Dashboard = ({ currentUser, onLogout, API }) => {
@@ -97,6 +99,8 @@ const Dashboard = ({ currentUser, onLogout, API }) => {
         {activeTab === 'mensajes' && <MensajesTab API={API} currentUser={currentUser} />}
         {activeTab === 'momento' && <MomentoTab API={API} currentUser={currentUser} />}
         {activeTab === 'juegos' && <JuegosTab API={API} currentUser={currentUser} />}
+        {activeTab === 'recargas' && <RecargasTab API={API} currentUser={currentUser} onUpdateUser={loadUserData} />}
+        {activeTab === 'vip' && <VIPTab API={API} currentUser={currentUser} onUpdateUser={loadUserData} />}
       </main>
 
       {/* Bottom Navigation */}
