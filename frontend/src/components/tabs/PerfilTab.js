@@ -116,7 +116,7 @@ const PerfilTab = ({ API, currentUser, onLogout }) => {
             <div className="flex items-center justify-between">
               <span className="text-gray-700 font-medium">Rol Especial</span>
               <Badge className="bg-gradient-to-r from-red-500 to-pink-500 text-white font-bold">
-                {userInfo.role === 'admin' && 'Administrador'}
+                {userInfo.role === 'admin' && '👑 Dueño'}
                 {userInfo.role === 'supervisor' && 'Supervisor'}
                 {userInfo.role === 'moderator' && 'Moderador'}
               </Badge>

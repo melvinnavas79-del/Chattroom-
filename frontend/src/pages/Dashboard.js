@@ -8,6 +8,8 @@ import ClanesTab from '@/components/tabs/ClanesTab';
 import EventosTab from '@/components/tabs/EventosTab';
 import PerfilTab from '@/components/tabs/PerfilTab';
 import AdminPanel from '@/components/tabs/AdminPanel';
+import MensajesTab from '@/components/tabs/MensajesTab';
+import MomentoTab from '@/components/tabs/MomentoTab';
 import { getAristocratInfo } from '@/lib/aristocrat';
 
 const Dashboard = ({ currentUser, onLogout, API }) => {
@@ -92,6 +94,9 @@ const Dashboard = ({ currentUser, onLogout, API }) => {
         {activeTab === 'descubrir' && <RankingsTab API={API} />}
         {activeTab === 'eventos' && <EventosTab API={API} />}
         {activeTab === 'admin' && <AdminPanel API={API} currentUser={userInfo} />}
+        {activeTab === 'mensajes' && <MensajesTab API={API} currentUser={currentUser} />}
+        {activeTab === 'momento' && <MomentoTab API={API} currentUser={currentUser} />}
+        {activeTab === 'juegos' && <JuegosTab API={API} currentUser={currentUser} />}
       </main>
 
       {/* Bottom Navigation */}
@@ -114,24 +119,42 @@ const Dashboard = ({ currentUser, onLogout, API }) => {
 
         <button
           onClick={() => setActiveTab('juegos')}
-          className="flex flex-col items-center gap-1 text-gray-400"
+          className={`flex flex-col items-center gap-1 ${
+            activeTab === 'juegos' ? 'text-green-500' : 'text-gray-400'
+          }`}
         >
-          <div className="w-10 h-10 rounded-full bg-gray-200 flex items-center justify-center">
-            <span className="text-gray-500 text-xl">🎮</span>
+          <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
+            activeTab === 'juegos' ? 'bg-green-500' : 'bg-gray-200'
+          }`}>
+            <span className={activeTab === 'juegos' ? 'text-white text-xl' : 'text-gray-500 text-xl'}>🎮</span>
           </div>
           <span className="text-xs font-medium">Juegos</span>
         </button>
 
-        <button className="flex flex-col items-center gap-1 text-gray-400">
-          <div className="w-10 h-10 rounded-full bg-gray-200 flex items-center justify-center">
-            <span className="text-gray-500 text-xl">⏰</span>
+        <button
+          onClick={() => setActiveTab('momento')}
+          className={`flex flex-col items-center gap-1 ${
+            activeTab === 'momento' ? 'text-purple-500' : 'text-gray-400'
+          }`}
+        >
+          <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
+            activeTab === 'momento' ? 'bg-purple-500' : 'bg-gray-200'
+          }`}>
+            <span className={activeTab === 'momento' ? 'text-white text-xl' : 'text-gray-500 text-xl'}>⏰</span>
           </div>
           <span className="text-xs font-medium">Momento</span>
         </button>
 
-        <button className="flex flex-col items-center gap-1 text-gray-400 relative">
-          <div className="w-10 h-10 rounded-full bg-gray-200 flex items-center justify-center">
-            <span className="text-gray-500 text-xl">💬</span>
+        <button
+          onClick={() => setActiveTab('mensajes')}
+          className={`flex flex-col items-center gap-1 relative ${
+            activeTab === 'mensajes' ? 'text-pink-500' : 'text-gray-400'
+          }`}
+        >
+          <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
+            activeTab === 'mensajes' ? 'bg-pink-500' : 'bg-gray-200'
+          }`}>
+            <span className={activeTab === 'mensajes' ? 'text-white text-xl' : 'text-gray-500 text-xl'}>💬</span>
           </div>
           <span className="text-xs font-medium">Mensaje</span>
           <span className="absolute top-0 right-2 bg-red-500 text-white text-xs w-5 h-5 rounded-full flex items-center justify-center font-bold">
@@ -153,12 +176,6 @@ const Dashboard = ({ currentUser, onLogout, API }) => {
         </button>
       </nav>
 
-      {/* Juegos Tab Content */}
-      {activeTab === 'juegos' && (
-        <div className="px-4 py-6">
-          <JuegosTab API={API} currentUser={currentUser} />
-        </div>
-      )}
     </div>
   );
 };
