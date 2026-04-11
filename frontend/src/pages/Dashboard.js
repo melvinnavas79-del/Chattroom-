@@ -7,6 +7,7 @@ import RankingsTab from '@/components/tabs/RankingsTab';
 import ClanesTab from '@/components/tabs/ClanesTab';
 import EventosTab from '@/components/tabs/EventosTab';
 import PerfilTab from '@/components/tabs/PerfilTab';
+import AdminPanel from '@/components/tabs/AdminPanel';
 import { getAristocratInfo } from '@/lib/aristocrat';
 
 const Dashboard = ({ currentUser, onLogout, API }) => {
@@ -36,6 +37,11 @@ const Dashboard = ({ currentUser, onLogout, API }) => {
     { id: 'descubrir', label: 'Descubrir' },
     { id: 'eventos', label: 'Event' },
   ];
+
+  // Add admin tab if user is admin or supervisor
+  if (userInfo?.role === 'admin' || userInfo?.role === 'supervisor') {
+    tabs.push({ id: 'admin', label: '👑 Admin' });
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-cyan-50 via-pink-50 to-white">
@@ -85,6 +91,7 @@ const Dashboard = ({ currentUser, onLogout, API }) => {
         {activeTab === 'popular' && <SalasTab API={API} currentUser={currentUser} />}
         {activeTab === 'descubrir' && <RankingsTab API={API} />}
         {activeTab === 'eventos' && <EventosTab API={API} />}
+        {activeTab === 'admin' && <AdminPanel API={API} currentUser={userInfo} />}
       </main>
 
       {/* Bottom Navigation */}

@@ -35,8 +35,11 @@ class User(BaseModel):
     diamonds: int = 0
     vip_level: str = "normal"  # normal, vip, svip, aristocrat
     aristocrat_level: int = 0  # 0 = no aristocrat, 1-9 = aristocrat levels
+    role: str = "user"  # user, moderator, supervisor, admin
     verified: bool = False
     ghost_mode: bool = False
+    banned: bool = False
+    ban_reason: str = ""
     clan_id: Optional[str] = None
     cp_partner_id: Optional[str] = None
     cp_level: int = 0
@@ -738,3 +741,127 @@ logger = logging.getLogger(__name__)
 @app.on_event("shutdown")
 async def shutdown_db_client():
     client.close()
+
+# ==================== ADMIN ENDPOINTS ====================
+
+@api_router.get("/admin/users")
+async def get_all_users_admin(admin_id: str = Query(...)):
+    """Get all users for admin panel"""
+    admin = await db.users.find_one({"id": admin_id}, {"_id": 0})
+    if not admin or admin.get("role") not in ["admin", "supervisor"]:
+        raise HTTPException(status_code=403, detail="No tienes permisos de administrador")
+    
+    users = await db.users.find({}, {"_id": 0}).sort("created_at", -1).limit(100).to_list(100)
+    return users
+
+@api_router.post("/admin/users/{user_id}/badges")
+async def add_badge_to_user(user_id: str, admin_id: str = Query(...), badge: str = Query(...)):
+    """Add badge to user"""
+    admin = await db.users.find_one({"id": admin_id}, {"_id": 0})
+    if not admin or admin.get("role") not in ["admin", "supervisor"]:
+        raise HTTPException(status_code=403, detail="No tienes permisos")
+    
+    await db.users.update_one(
+        {"id": user_id},
+        {"$addToSet": {"badges": badge}}
+    )
+    
+    user = await db.users.find_one({"id": user_id}, {"_id": 0})
+    return user
+
+@api_router.delete("/admin/users/{user_id}/badges")
+async def remove_badge_from_user(user_id: str, admin_id: str = Query(...), badge: str = Query(...)):
+    """Remove badge from user"""
+    admin = await db.users.find_one({"id": admin_id}, {"_id": 0})
+    if not admin or admin.get("role") not in ["admin", "supervisor"]:
+        raise HTTPException(status_code=403, detail="No tienes permisos")
+    
+    await db.users.update_one(
+        {"id": user_id},
+        {"$pull": {"badges": badge}}
+    )
+    
+    user = await db.users.find_one({"id": user_id}, {"_id": 0})
+    return user
+
+@api_router.post("/admin/users/{user_id}/role")
+async def update_user_role(user_id: str, admin_id: str = Query(...), new_role: str = Query(...)):
+    """Update user role"""
+    admin = await db.users.find_one({"id": admin_id}, {"_id": 0})
+    if not admin or admin.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Solo administradores pueden cambiar roles")
+    
+    if new_role not in ["user", "moderator", "supervisor", "admin"]:
+        raise HTTPException(status_code=400, detail="Rol inválido")
+    
+    await db.users.update_one(
+        {"id": user_id},
+        {"$set": {"role": new_role}}
+    )
+    
+    user = await db.users.find_one({"id": user_id}, {"_id": 0})
+    return user
+
+@api_router.post("/admin/users/{user_id}/ban")
+async def ban_user(user_id: str, admin_id: str = Query(...), reason: str = Query(...)):
+    """Ban a user"""
+    admin = await db.users.find_one({"id": admin_id}, {"_id": 0})
+    if not admin or admin.get("role") not in ["admin", "supervisor", "moderator"]:
+        raise HTTPException(status_code=403, detail="No tienes permisos")
+    
+    await db.users.update_one(
+        {"id": user_id},
+        {"$set": {"banned": True, "ban_reason": reason}}
+    )
+    
+    user = await db.users.find_one({"id": user_id}, {"_id": 0})
+    return user
+
+@api_router.post("/admin/users/{user_id}/unban")
+async def unban_user(user_id: str, admin_id: str = Query(...)):
+    """Unban a user"""
+    admin = await db.users.find_one({"id": admin_id}, {"_id": 0})
+    if not admin or admin.get("role") not in ["admin", "supervisor"]:
+        raise HTTPException(status_code=403, detail="No tienes permisos")
+    
+    await db.users.update_one(
+        {"id": user_id},
+        {"$set": {"banned": False, "ban_reason": ""}}
+    )
+    
+    user = await db.users.find_one({"id": user_id}, {"_id": 0})
+    return user
+
+@api_router.post("/admin/users/{user_id}/coins")
+async def modify_user_coins(user_id: str, admin_id: str = Query(...), amount: int = Query(...)):
+    """Add or remove coins"""
+    admin = await db.users.find_one({"id": admin_id}, {"_id": 0})
+    if not admin or admin.get("role") not in ["admin", "supervisor"]:
+        raise HTTPException(status_code=403, detail="No tienes permisos")
+    
+    await db.users.update_one(
+        {"id": user_id},
+        {"$inc": {"coins": amount}}
+    )
+    
+    user = await db.users.find_one({"id": user_id}, {"_id": 0})
+    return user
+
+@api_router.get("/admin/stats")
+async def get_admin_stats(admin_id: str = Query(...)):
+    """Get statistics"""
+    admin = await db.users.find_one({"id": admin_id}, {"_id": 0})
+    if not admin or admin.get("role") not in ["admin", "supervisor"]:
+        raise HTTPException(status_code=403, detail="No tienes permisos")
+    
+    total_users = await db.users.count_documents({})
+    total_rooms = await db.rooms.count_documents({})
+    total_messages = await db.messages.count_documents({})
+    banned_users = await db.users.count_documents({"banned": True})
+    
+    return {
+        "total_users": total_users,
+        "total_rooms": total_rooms,
+        "total_messages": total_messages,
+        "banned_users": banned_users
+    }
