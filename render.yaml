@@ -1,0 +1,34 @@
+services:
+  # Backend API
+  - type: web
+    name: lluvia-live-backend
+    env: python
+    region: oregon
+    plan: free
+    buildCommand: "pip install -r backend/requirements.txt"
+    startCommand: "cd backend && python init_owner.py && uvicorn server:app --host 0.0.0.0 --port $PORT"
+    envVars:
+      - key: MONGO_URL
+        sync: false
+      - key: DB_NAME
+        value: lluvia_live
+      - key: CORS_ORIGINS
+        value: "*"
+      - key: PYTHON_VERSION
+        value: "3.11.0"
+    
+  # Frontend Static Site
+  - type: web
+    name: lluvia-live-frontend
+    env: static
+    region: oregon
+    plan: free
+    buildCommand: "cd frontend && yarn install && yarn build"
+    staticPublishPath: frontend/build
+    envVars:
+      - key: REACT_APP_BACKEND_URL
+        sync: false
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html

@@ -166,10 +166,25 @@ async def login_user(username: str = Query(...)):
     user = await db.users.find_one({"username": username}, {"_id": 0})
     
     if not user:
-        # Create new user
-        new_user = User(username=username)
-        await db.users.insert_one(new_user.model_dump())
-        user = new_user.model_dump()
+        # Solo el Dueño (Melvin) puede crear cuenta automáticamente
+        # Otros usuarios deben ser creados por el admin
+        if username.lower() == "melvin":
+            # Crear cuenta del Dueño si no existe
+            new_user = User(
+                username="Melvin",
+                level=99,
+                coins=999999,
+                diamonds=50000,
+                vip_level="aristocrat",
+                aristocrat_level=9,
+                role="admin",
+                verified=True,
+                badges=["👑 Fundador", "⭐ Admin", "🏆 VIP", "💎 Aristocrat IX"]
+            )
+            await db.users.insert_one(new_user.model_dump())
+            user = new_user.model_dump()
+        else:
+            raise HTTPException(status_code=403, detail="Usuario no autorizado. Esta es una aplicación privada.")
     
     return user
 
