@@ -1,0 +1,1352 @@
+=================================================================
+LLUVIA LIVE - CÓDIGO COMPLETO PARA BACKUP
+=================================================================
+
+📁 ARCHIVO: /app/backend/server.py
+=================================================================
+from fastapi import FastAPI, APIRouter, HTTPException, Query
+from fastapi.responses import JSONResponse
+from dotenv import load_dotenv
+from starlette.middleware.cors import CORSMiddleware
+from motor.motor_asyncio import AsyncIOMotorClient
+import os
+import logging
+from pathlib import Path
+from pydantic import BaseModel, Field, ConfigDict
+from typing import List, Optional, Dict, Any
+import uuid
+from datetime import datetime, timezone, timedelta
+import random
+
+ROOT_DIR = Path(__file__).parent
+load_dotenv(ROOT_DIR / '.env')
+
+# MongoDB connection
+mongo_url = os.environ['MONGO_URL']
+client = AsyncIOMotorClient(mongo_url)
+db = client[os.environ['DB_NAME']]
+
+app = FastAPI(title="Lluvia Live API")
+api_router = APIRouter(prefix="/api")
+
+# ==================== MODELS ====================
+
+class User(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    username: str
+    avatar: str = "https://api.dicebear.com/7.x/avataaars/svg?seed=default"
+    level: int = 1
+    coins: int = 1000
+    diamonds: int = 0
+    vip_level: str = "normal"  # normal, vip, svip, aristocrat
+    verified: bool = False
+    ghost_mode: bool = False
+    clan_id: Optional[str] = None
+    cp_partner_id: Optional[str] = None
+    cp_level: int = 0
+    total_spent: int = 0
+    total_received: int = 0
+    badges: List[str] = []
+    created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+
+class Room(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    name: str
+    owner_id: str
+    topic: str = "Chat General"
+    background: str = "https://images.unsplash.com/photo-1557683316-973673baf926"
+    description: str = ""
+    active_users: int = 0
+    is_live: bool = False
+    seats: List[Optional[Dict[str, Any]]] = Field(default_factory=lambda: [None] * 9)
+    password: Optional[str] = None
+    max_seats: int = 9
+    total_members: int = 0
+    is_active: bool = True
+    total_gifts_value: int = 0
+    baby_robot_threshold: int = 50000000
+    baby_robot_prize: int = 15000000
+    baby_robot_count: int = 0
+    created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+
+class Message(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    room_id: str
+    user_id: str
+    username: str
+    user_avatar: str
+    user_vip: str = "normal"
+    message: str
+    type: str = "text"  # text, gift, entrance, system
+    gift_id: Optional[str] = None
+    timestamp: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+
+class Gift(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    name: str
+    emoji: str
+    price: int
+    animation: str = "bounce"
+    rarity: str = "common"
+
+class Clan(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    name: str
+    logo: str
+    leader_id: str
+    members: List[str] = []
+    total_points: int = 0
+    weekly_points: int = 0
+    monthly_points: int = 0
+    level: int = 1
+    created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+
+class Event(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    title: str
+    description: str
+    event_type: str  # daily, weekly, special
+    start_date: str
+    end_date: str
+    rewards: List[Dict[str, Any]] = []
+    is_active: bool = True
+
+class Reel(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    user_id: str
+    username: str
+    user_avatar: str
+    video_url: str
+    thumbnail_url: str
+    caption: str = ""
+    likes: int = 0
+    comments: int = 0
+    views: int = 0
+    created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+
+class Photo(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    user_id: str
+    username: str
+    user_avatar: str
+    photo_url: str
+    caption: str = ""
+    likes: int = 0
+    comments: int = 0
+    created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+
+class Game(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    name: str
+    icon: str
+    description: str
+    min_bet: int
+    max_bet: int
+    is_active: bool = True
+
+# ==================== ENDPOINTS ====================
+
+# Health check
+@api_router.get("/")
+async def root():
+    return {"message": "Lluvia Live API is running", "status": "ok"}
+
+# ==================== USER ENDPOINTS ====================
+
+@api_router.post("/users/login")
+async def login_user(username: str = Query(...)):
+    """Login or create user"""
+    user = await db.users.find_one({"username": username}, {"_id": 0})
+    
+    if not user:
+        # Create new user
+        new_user = User(username=username)
+        await db.users.insert_one(new_user.model_dump())
+        user = new_user.model_dump()
+    
+    return user
+
+@api_router.get("/users/{user_id}")
+async def get_user(user_id: str):
+    """Get user by ID"""
+    user = await db.users.find_one({"id": user_id}, {"_id": 0})
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    return user
+
+@api_router.put("/users/{user_id}")
+async def update_user(user_id: str, update_data: Dict[str, Any]):
+    """Update user data"""
+    result = await db.users.update_one(
+        {"id": user_id},
+        {"$set": update_data}
+    )
+    if result.modified_count == 0:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    user = await db.users.find_one({"id": user_id}, {"_id": 0})
+    return user
+
+# ==================== ROOM ENDPOINTS ====================
+
+@api_router.get("/rooms")
+async def get_rooms():
+    """Get all active rooms"""
+    rooms = await db.rooms.find({"is_active": True}, {"_id": 0}).to_list(100)
+    return rooms
+
+@api_router.get("/rooms/{room_id}")
+async def get_room(room_id: str):
+    """Get room details"""
+    room = await db.rooms.find_one({"id": room_id}, {"_id": 0})
+    if not room:
+        raise HTTPException(status_code=404, detail="Room not found")
+    return room
+
+@api_router.post("/rooms")
+async def create_room(room_data: Dict[str, Any]):
+    """Create a new room"""
+    room = Room(**room_data)
+    await db.rooms.insert_one(room.model_dump())
+    return room.model_dump()
+
+@api_router.post("/rooms/{room_id}/join")
+async def join_room(room_id: str, user_id: str = Query(...), seat_index: Optional[int] = None):
+    """Join a room and optionally take a seat"""
+    room = await db.rooms.find_one({"id": room_id}, {"_id": 0})
+    if not room:
+        raise HTTPException(status_code=404, detail="Room not found")
+    
+    # Update total members
+    await db.rooms.update_one(
+        {"id": room_id},
+        {"$inc": {"total_members": 1, "active_users": 1}}
+    )
+    
+    # If seat_index provided, try to take seat
+    if seat_index is not None:
+        user = await db.users.find_one({"id": user_id}, {"_id": 0})
+        if user and seat_index < len(room.get("seats", [])):
+            seats = room.get("seats", [None] * 9)
+            if seats[seat_index] is None:
+                seats[seat_index] = {
+                    "user_id": user_id,
+                    "username": user["username"],
+                    "avatar": user["avatar"],
+                    "is_muted": False
+                }
+                await db.rooms.update_one(
+                    {"id": room_id},
+                    {"$set": {"seats": seats}}
+                )
+    
+    updated_room = await db.rooms.find_one({"id": room_id}, {"_id": 0})
+    return updated_room
+
+@api_router.post("/rooms/{room_id}/leave")
+async def leave_room(room_id: str, user_id: str = Query(...)):
+    """Leave a room"""
+    room = await db.rooms.find_one({"id": room_id}, {"_id": 0})
+    if not room:
+        raise HTTPException(status_code=404, detail="Room not found")
+    
+    # Remove from seat if sitting
+    seats = room.get("seats", [None] * 9)
+    for i, seat in enumerate(seats):
+        if seat and seat.get("user_id") == user_id:
+            seats[i] = None
+    
+    await db.rooms.update_one(
+        {"id": room_id},
+        {
+            "$set": {"seats": seats},
+            "$inc": {"active_users": -1}
+        }
+    )
+    
+    updated_room = await db.rooms.find_one({"id": room_id}, {"_id": 0})
+    return updated_room
+
+# ==================== MESSAGE ENDPOINTS ====================
+
+@api_router.get("/rooms/{room_id}/messages")
+async def get_messages(room_id: str, limit: int = 50):
+    """Get recent messages from a room"""
+    messages = await db.messages.find(
+        {"room_id": room_id},
+        {"_id": 0}
+    ).sort("timestamp", -1).limit(limit).to_list(limit)
+    
+    return list(reversed(messages))
+
+@api_router.post("/rooms/{room_id}/messages")
+async def send_message(room_id: str, message_data: Dict[str, Any]):
+    """Send a message to a room"""
+    message = Message(room_id=room_id, **message_data)
+    await db.messages.insert_one(message.model_dump())
+    return message.model_dump()
+
+# ==================== GIFT ENDPOINTS ====================
+
+@api_router.get("/gifts")
+async def get_gifts():
+    """Get all available gifts"""
+    gifts = await db.gifts.find({}, {"_id": 0}).to_list(100)
+    return gifts
+
+@api_router.post("/gifts/send")
+async def send_gift(gift_data: Dict[str, Any]):
+    """Send a gift in a room"""
+    sender_id = gift_data.get("sender_id")
+    receiver_id = gift_data.get("receiver_id")
+    gift_id = gift_data.get("gift_id")
+    room_id = gift_data.get("room_id")
+    
+    # Get gift details
+    gift = await db.gifts.find_one({"id": gift_id}, {"_id": 0})
+    if not gift:
+        raise HTTPException(status_code=404, detail="Gift not found")
+    
+    # Deduct coins from sender
+    sender = await db.users.find_one({"id": sender_id}, {"_id": 0})
+    if not sender or sender["coins"] < gift["price"]:
+        raise HTTPException(status_code=400, detail="Insufficient coins")
+    
+    await db.users.update_one(
+        {"id": sender_id},
+        {"$inc": {"coins": -gift["price"], "total_spent": gift["price"]}}
+    )
+    
+    # Add coins to receiver (80% of gift value)
+    receiver_amount = int(gift["price"] * 0.8)
+    await db.users.update_one(
+        {"id": receiver_id},
+        {"$inc": {"coins": receiver_amount, "total_received": receiver_amount}}
+    )
+    
+    # Update room gift value
+    await db.rooms.update_one(
+        {"id": room_id},
+        {"$inc": {"total_gifts_value": gift["price"]}}
+    )
+    
+    # Create gift message
+    message = Message(
+        room_id=room_id,
+        user_id=sender_id,
+        username=sender["username"],
+        user_avatar=sender["avatar"],
+        user_vip=sender.get("vip_level", "normal"),
+        message=f"sent {gift['emoji']} {gift['name']}",
+        type="gift",
+        gift_id=gift_id
+    )
+    await db.messages.insert_one(message.model_dump())
+    
+    return {"success": True, "message": message.model_dump()}
+
+# ==================== CLAN ENDPOINTS ====================
+
+@api_router.get("/clans")
+async def get_clans():
+    """Get all clans"""
+    clans = await db.clans.find({}, {"_id": 0}).to_list(100)
+    return clans
+
+@api_router.get("/clans/{clan_id}")
+async def get_clan(clan_id: str):
+    """Get clan details"""
+    clan = await db.clans.find_one({"id": clan_id}, {"_id": 0})
+    if not clan:
+        raise HTTPException(status_code=404, detail="Clan not found")
+    return clan
+
+@api_router.post("/clans")
+async def create_clan(clan_data: Dict[str, Any]):
+    """Create a new clan"""
+    clan = Clan(**clan_data)
+    await db.clans.insert_one(clan.model_dump())
+    return clan.model_dump()
+
+@api_router.post("/clans/{clan_id}/join")
+async def join_clan(clan_id: str, user_id: str = Query(...)):
+    """Join a clan"""
+    await db.clans.update_one(
+        {"id": clan_id},
+        {"$addToSet": {"members": user_id}}
+    )
+    
+    await db.users.update_one(
+        {"id": user_id},
+        {"$set": {"clan_id": clan_id}}
+    )
+    
+    clan = await db.clans.find_one({"id": clan_id}, {"_id": 0})
+    return clan
+
+# ==================== EVENT ENDPOINTS ====================
+
+@api_router.get("/events")
+async def get_events():
+    """Get all active events"""
+    events = await db.events.find({"is_active": True}, {"_id": 0}).to_list(100)
+    return events
+
+# ==================== REEL ENDPOINTS ====================
+
+@api_router.get("/reels")
+async def get_reels():
+    """Get all reels"""
+    reels = await db.reels.find({}, {"_id": 0}).sort("created_at", -1).to_list(100)
+    return reels
+
+@api_router.post("/reels")
+async def create_reel(reel_data: Dict[str, Any]):
+    """Create a new reel"""
+    reel = Reel(**reel_data)
+    await db.reels.insert_one(reel.model_dump())
+    return reel.model_dump()
+
+@api_router.post("/reels/{reel_id}/like")
+async def like_reel(reel_id: str):
+    """Like a reel"""
+    await db.reels.update_one(
+        {"id": reel_id},
+        {"$inc": {"likes": 1}}
+    )
+    reel = await db.reels.find_one({"id": reel_id}, {"_id": 0})
+    return reel
+
+# ==================== PHOTO ENDPOINTS ====================
+
+@api_router.get("/photos")
+async def get_photos():
+    """Get all photos"""
+    photos = await db.photos.find({}, {"_id": 0}).sort("created_at", -1).to_list(100)
+    return photos
+
+@api_router.post("/photos")
+async def create_photo(photo_data: Dict[str, Any]):
+    """Upload a new photo"""
+    photo = Photo(**photo_data)
+    await db.photos.insert_one(photo.model_dump())
+    return photo.model_dump()
+
+@api_router.post("/photos/{photo_id}/like")
+async def like_photo(photo_id: str):
+    """Like a photo"""
+    await db.photos.update_one(
+        {"id": photo_id},
+        {"$inc": {"likes": 1}}
+    )
+    photo = await db.photos.find_one({"id": photo_id}, {"_id": 0})
+    return photo
+
+# ==================== GAME ENDPOINTS ====================
+
+@api_router.get("/games")
+async def get_games():
+    """Get all available games"""
+    games = await db.games.find({"is_active": True}, {"_id": 0}).to_list(100)
+    return games
+
+# ==================== RANKING ENDPOINTS ====================
+
+@api_router.get("/rankings/users")
+async def get_user_rankings(limit: int = 50):
+    """Get top users by level/coins"""
+    users = await db.users.find(
+        {},
+        {"_id": 0}
+    ).sort("level", -1).limit(limit).to_list(limit)
+    return users
+
+@api_router.get("/rankings/clans")
+async def get_clan_rankings(period: str = "total"):
+    """Get top clans by points"""
+    sort_field = "total_points"
+    if period == "weekly":
+        sort_field = "weekly_points"
+    elif period == "monthly":
+        sort_field = "monthly_points"
+    
+    clans = await db.clans.find(
+        {},
+        {"_id": 0}
+    ).sort(sort_field, -1).limit(50).to_list(50)
+    return clans
+
+# ==================== DEMO DATA ENDPOINT ====================
+
+@api_router.post("/init/demo-data")
+async def init_demo_data():
+    # Create demo users
+    demo_users = [
+        {"id": "user-1", "username": "Sofia_Glamour", "avatar": "https://static.prod-images.emergentagent.com/jobs/bd5e66d4-900a-4301-b040-8f41267c6377/images/47d256b00df727800ea7e118657bf9e36e1154214e40a6bdf479cd5a63c7aa32.png", "coins": 50000, "vip_level": "aristocrat", "level": 25},
+        {"id": "user-2", "username": "Luna_Star", "avatar": "https://static.prod-images.emergentagent.com/jobs/bd5e66d4-900a-4301-b040-8f41267c6377/images/93b309f787e7a09a4fabdce8cfe34a60834a8178eadf4f552aa5bbfd9433bec0.png", "coins": 30000, "vip_level": "svip", "level": 18},
+        {"id": "user-3", "username": "Bella_Rose", "avatar": "https://static.prod-images.emergentagent.com/jobs/bd5e66d4-900a-4301-b040-8f41267c6377/images/9d2b609bac2d0901cc2752dbf62fb9b01b365ee0ec25eae1272b11d9ba53e863.png", "coins": 25000, "vip_level": "vip", "level": 15},
+    ]
+    
+    for user_data in demo_users:
+        existing = await db.users.find_one({"id": user_data["id"]})
+        if not existing:
+            user = User(**user_data)
+            await db.users.insert_one(user.model_dump())
+    
+    # Create demo rooms with better data
+    demo_rooms = [
+        {
+            "id": "room-1",
+            "name": "The Glam Room✨",
+            "topic": "Sala Glamurosa",
+            "owner_id": "user-1",
+            "background": "https://static.prod-images.emergentagent.com/jobs/bd5e66d4-900a-4301-b040-8f41267c6377/images/02707e35244e966c226ec2ba7a87d449728a15a8c7e63c58c85a8f330e304aec.png",
+            "description": "Bienvenidos a The Glam Room✨ Comparte tu voz, disfruta y conecta con gente increíble",
+            "active_users": 72,
+            "is_live": True
+        },
+        {
+            "id": "room-2",
+            "name": "Pink Palace🎀👑",
+            "topic": "Palacio Rosa",
+            "owner_id": "user-2",
+            "background": "https://static.prod-images.emergentagent.com/jobs/bd5e66d4-900a-4301-b040-8f41267c6377/images/02707e35244e966c226ec2ba7a87d449728a15a8c7e63c58c85a8f330e304aec.png",
+            "description": "Entra al Pink Palace - brilla✨, habla😘, y todo lo bonito🎀 en vivo",
+            "active_users": 97,
+            "is_live": True
+        },
+        {
+            "id": "room-3",
+            "name": "Moon Lounge🛋️✨",
+            "topic": "Lounge Lunar",
+            "owner_id": "user-3",
+            "background": "https://static.prod-images.emergentagent.com/jobs/bd5e66d4-900a-4301-b040-8f41267c6377/images/02707e35244e966c226ec2ba7a87d449728a15a8c7e63c58c85a8f330e304aec.png",
+            "description": "Entra al Moon Lounge - el silencio es dorado aquí🌙",
+            "active_users": 89,
+            "is_live": True
+        },
+        {
+            "id": "room-4",
+            "name": "Fiesta Latina🎉💃",
+            "topic": "Música Latina",
+            "owner_id": "user-1",
+            "background": "https://static.prod-images.emergentagent.com/jobs/bd5e66d4-900a-4301-b040-8f41267c6377/images/02707e35244e966c226ec2ba7a87d449728a15a8c7e63c58c85a8f330e304aec.png",
+            "description": "¡Ritmo latino 24/7! Baila, canta y diviértete con nosotros🔥",
+            "active_users": 124,
+            "is_live": True
+        },
+    ]
+    
+    for room_data in demo_rooms:
+        existing = await db.rooms.find_one({"id": room_data.get("id")})
+        if not existing:
+            room_full_data = {
+                **room_data,
+                "seats": [None] * 9,
+                "total_members": room_data.get("active_users", 0),
+                "max_seats": 9,
+                "is_active": True,
+                "total_gifts_value": 0,
+                "baby_robot_threshold": 50000000,
+                "baby_robot_prize": 15000000,
+                "baby_robot_count": 0,
+                "created_at": datetime.now(timezone.utc).isoformat()
+            }
+            await db.rooms.insert_one(room_full_data)
+    
+    # Create demo reels
+    demo_reels = [
+        {
+            "id": "reel-1",
+            "user_id": "user-1",
+            "username": "Sofia_Glamour",
+            "user_avatar": "https://static.prod-images.emergentagent.com/jobs/bd5e66d4-900a-4301-b040-8f41267c6377/images/47d256b00df727800ea7e118657bf9e36e1154214e40a6bdf479cd5a63c7aa32.png",
+            "video_url": "https://static.prod-images.emergentagent.com/jobs/bd5e66d4-900a-4301-b040-8f41267c6377/images/02707e35244e966c226ec2ba7a87d449728a15a8c7e63c58c85a8f330e304aec.png",
+            "thumbnail_url": "https://static.prod-images.emergentagent.com/jobs/bd5e66d4-900a-4301-b040-8f41267c6377/images/47d256b00df727800ea7e118657bf9e36e1154214e40a6bdf479cd5a63c7aa32.png",
+            "caption": "✨ Nuevo look! ¿Les gusta? 💕",
+            "likes": 1234,
+            "comments": 89,
+            "views": 5678
+        },
+        {
+            "id": "reel-2",
+            "user_id": "user-2",
+            "username": "Luna_Star",
+            "user_avatar": "https://static.prod-images.emergentagent.com/jobs/bd5e66d4-900a-4301-b040-8f41267c6377/images/93b309f787e7a09a4fabdce8cfe34a60834a8178eadf4f552aa5bbfd9433bec0.png",
+            "video_url": "https://static.prod-images.emergentagent.com/jobs/bd5e66d4-900a-4301-b040-8f41267c6377/images/02707e35244e966c226ec2ba7a87d449728a15a8c7e63c58c85a8f330e304aec.png",
+            "thumbnail_url": "https://static.prod-images.emergentagent.com/jobs/bd5e66d4-900a-4301-b040-8f41267c6377/images/93b309f787e7a09a4fabdce8cfe34a60834a8178eadf4f552aa5bbfd9433bec0.png",
+            "caption": "🌙 Noche mágica en el stream",
+            "likes": 2341,
+            "comments": 156,
+            "views": 8901
+        },
+        {
+            "id": "reel-3",
+            "user_id": "user-3",
+            "username": "Bella_Rose",
+            "user_avatar": "https://static.prod-images.emergentagent.com/jobs/bd5e66d4-900a-4301-b040-8f41267c6377/images/9d2b609bac2d0901cc2752dbf62fb9b01b365ee0ec25eae1272b11d9ba53e863.png",
+            "video_url": "https://static.prod-images.emergentagent.com/jobs/bd5e66d4-900a-4301-b040-8f41267c6377/images/02707e35244e966c226ec2ba7a87d449728a15a8c7e63c58c85a8f330e304aec.png",
+            "thumbnail_url": "https://static.prod-images.emergentagent.com/jobs/bd5e66d4-900a-4301-b040-8f41267c6377/images/9d2b609bac2d0901cc2752dbf62fb9b01b365ee0ec25eae1272b11d9ba53e863.png",
+            "caption": "🎀 Behind the scenes de mi sala",
+            "likes": 987,
+            "comments": 45,
+            "views": 3456
+        }
+    ]
+    
+    for reel_data in demo_reels:
+        existing = await db.reels.find_one({"id": reel_data["id"]})
+        if not existing:
+            reel = Reel(**reel_data)
+            await db.reels.insert_one(reel.model_dump())
+    
+    # Create demo photos
+    demo_photos = [
+        {
+            "id": "photo-1",
+            "user_id": "user-1",
+            "username": "Sofia_Glamour",
+            "user_avatar": "https://static.prod-images.emergentagent.com/jobs/bd5e66d4-900a-4301-b040-8f41267c6377/images/47d256b00df727800ea7e118657bf9e36e1154214e40a6bdf479cd5a63c7aa32.png",
+            "photo_url": "https://static.prod-images.emergentagent.com/jobs/bd5e66d4-900a-4301-b040-8f41267c6377/images/47d256b00df727800ea7e118657bf9e36e1154214e40a6bdf479cd5a63c7aa32.png",
+            "caption": "Sesión de fotos glamurosa ✨👑",
+            "likes": 2156,
+            "comments": 234
+        },
+        {
+            "id": "photo-2",
+            "user_id": "user-2",
+            "username": "Luna_Star",
+            "user_avatar": "https://static.prod-images.emergentagent.com/jobs/bd5e66d4-900a-4301-b040-8f41267c6377/images/93b309f787e7a09a4fabdce8cfe34a60834a8178eadf4f552aa5bbfd9433bec0.png",
+            "photo_url": "https://static.prod-images.emergentagent.com/jobs/bd5e66d4-900a-4301-b040-8f41267c6377/images/93b309f787e7a09a4fabdce8cfe34a60834a8178eadf4f552aa5bbfd9433bec0.png",
+            "caption": "Outfit del día 💙✨",
+            "likes": 1876,
+            "comments": 178
+        },
+        {
+            "id": "photo-3",
+            "user_id": "user-3",
+            "username": "Bella_Rose",
+            "user_avatar": "https://static.prod-images.emergentagent.com/jobs/bd5e66d4-900a-4301-b040-8f41267c6377/images/9d2b609bac2d0901cc2752dbf62fb9b01b365ee0ec25eae1272b11d9ba53e863.png",
+            "photo_url": "https://static.prod-images.emergentagent.com/jobs/bd5e66d4-900a-4301-b040-8f41267c6377/images/9d2b609bac2d0901cc2752dbf62fb9b01b365ee0ec25eae1272b11d9ba53e863.png",
+            "caption": "Ready para el stream 🎀💕",
+            "likes": 1543,
+            "comments": 134
+        },
+        {
+            "id": "photo-4",
+            "user_id": "user-1",
+            "username": "Sofia_Glamour",
+            "user_avatar": "https://static.prod-images.emergentagent.com/jobs/bd5e66d4-900a-4301-b040-8f41267c6377/images/47d256b00df727800ea7e118657bf9e36e1154214e40a6bdf479cd5a63c7aa32.png",
+            "photo_url": "https://static.prod-images.emergentagent.com/jobs/bd5e66d4-900a-4301-b040-8f41267c6377/images/02707e35244e966c226ec2ba7a87d449728a15a8c7e63c58c85a8f330e304aec.png",
+            "caption": "Ambiente de mi sala VIP 🌟",
+            "likes": 3421,
+            "comments": 456
+        },
+        {
+            "id": "photo-5",
+            "user_id": "user-2",
+            "username": "Luna_Star",
+            "user_avatar": "https://static.prod-images.emergentagent.com/jobs/bd5e66d4-900a-4301-b040-8f41267c6377/images/93b309f787e7a09a4fabdce8cfe34a60834a8178eadf4f552aa5bbfd9433bec0.png",
+            "photo_url": "https://static.prod-images.emergentagent.com/jobs/bd5e66d4-900a-4301-b040-8f41267c6377/images/93b309f787e7a09a4fabdce8cfe34a60834a8178eadf4f552aa5bbfd9433bec0.png",
+            "caption": "Selfie time! 📸",
+            "likes": 2987,
+            "comments": 312
+        },
+        {
+            "id": "photo-6",
+            "user_id": "user-3",
+            "username": "Bella_Rose",
+            "user_avatar": "https://static.prod-images.emergentagent.com/jobs/bd5e66d4-900a-4301-b040-8f41267c6377/images/9d2b609bac2d0901cc2752dbf62fb9b01b365ee0ec25eae1272b11d9ba53e863.png",
+            "photo_url": "https://static.prod-images.emergentagent.com/jobs/bd5e66d4-900a-4301-b040-8f41267c6377/images/9d2b609bac2d0901cc2752dbf62fb9b01b365ee0ec25eae1272b11d9ba53e863.png",
+            "caption": "Glam mode ON 💄✨",
+            "likes": 1654,
+            "comments": 187
+        }
+    ]
+    
+    for photo_data in demo_photos:
+        existing = await db.photos.find_one({"id": photo_data["id"]})
+        if not existing:
+            photo = Photo(**photo_data)
+            await db.photos.insert_one(photo.model_dump())
+    
+    # Create demo gifts
+    demo_gifts = [
+        {"id": "gift-1", "name": "Rosa", "emoji": "🌹", "price": 10, "animation": "hearts", "rarity": "common"},
+        {"id": "gift-2", "name": "Corazón", "emoji": "❤️", "price": 50, "animation": "hearts", "rarity": "rare"},
+        {"id": "gift-3", "name": "Corona", "emoji": "👑", "price": 500, "animation": "fireworks", "rarity": "epic"},
+        {"id": "gift-4", "name": "Diamante", "emoji": "💎", "price": 1000, "animation": "fireworks", "rarity": "legendary"},
+    ]
+    
+    for gift_data in demo_gifts:
+        existing = await db.gifts.find_one({"id": gift_data["id"]})
+        if not existing:
+            gift = Gift(**gift_data)
+            await db.gifts.insert_one(gift.model_dump())
+    
+    # Create demo clan
+    existing_clan = await db.clans.find_one({"name": "Lluvia Kings"})
+    if not existing_clan:
+        clan = Clan(
+            name="Lluvia Kings",
+            logo="👑",
+            leader_id="user-1",
+            members=["user-1", "user-2", "user-3"],
+            total_points=15000,
+            weekly_points=4500,
+            monthly_points=9000
+        )
+        await db.clans.insert_one(clan.model_dump())
+    
+    # Create demo games
+    demo_games = [
+        {"id": "game-1", "name": "Ruleta", "icon": "🎰", "description": "Gira y gana", "min_bet": 10, "max_bet": 10000, "is_active": True},
+        {"id": "game-2", "name": "Dados", "icon": "🎲", "description": "Suerte con los dados", "min_bet": 5, "max_bet": 5000, "is_active": True},
+    ]
+    
+    for game_data in demo_games:
+        existing = await db.games.find_one({"id": game_data["id"]})
+        if not existing:
+            game = Game(**game_data)
+            await db.games.insert_one(game.model_dump())
+    
+    return {"success": True, "message": "Demo data initialized"}
+
+# Include router
+app.include_router(api_router)
+
+# CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_credentials=True,
+    allow_origins=os.environ.get('CORS_ORIGINS', '*').split(','),
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
+@app.on_event("shutdown")
+async def shutdown_db_client():
+    client.close()
+
+📁 ARCHIVO: /app/frontend/src/App.js
+=================================================================
+import { useState, useEffect } from 'react';
+import '@/App.css';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import LoginPage from '@/pages/LoginPage';
+import Dashboard from '@/pages/Dashboard';
+import RoomView from '@/pages/RoomView';
+
+const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
+const API = `${BACKEND_URL}/api`;
+
+function App() {
+  const [currentUser, setCurrentUser] = useState(null);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    // Check if user is already logged in
+    const savedUser = localStorage.getItem('lluvia_user');
+    if (savedUser) {
+      setCurrentUser(JSON.parse(savedUser));
+    }
+    setIsLoading(false);
+  }, []);
+
+  const handleLogin = (user) => {
+    setCurrentUser(user);
+    localStorage.setItem('lluvia_user', JSON.stringify(user));
+  };
+
+  const handleLogout = () => {
+    setCurrentUser(null);
+    localStorage.removeItem('lluvia_user');
+  };
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 flex items-center justify-center">
+        <div className="text-white text-2xl">Cargando...</div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="App">
+      <BrowserRouter>
+        <Routes>
+          <Route
+            path="/"
+            element={
+              currentUser ? (
+                <Navigate to="/dashboard" replace />
+              ) : (
+                <LoginPage onLogin={handleLogin} API={API} />
+              )
+            }
+          />
+          <Route
+            path="/dashboard"
+            element={
+              currentUser ? (
+                <Dashboard currentUser={currentUser} onLogout={handleLogout} API={API} />
+              ) : (
+                <Navigate to="/" replace />
+              )
+            }
+          />
+          <Route
+            path="/room/:roomId"
+            element={
+              currentUser ? (
+                <RoomView currentUser={currentUser} API={API} />
+              ) : (
+                <Navigate to="/" replace />
+              )
+            }
+          />
+        </Routes>
+      </BrowserRouter>
+    </div>
+  );
+}
+
+export default App;
+
+📁 ARCHIVO: /app/frontend/src/pages/LoginPage.js
+=================================================================
+import { useState } from 'react';
+import axios from 'axios';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+
+const LoginPage = ({ onLogin, API }) => {
+  const [username, setUsername] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const handleLogin = async () => {
+    if (!username.trim()) return;
+
+    setLoading(true);
+    try {
+      const response = await axios.post(`${API}/users/login?username=${encodeURIComponent(username)}`);
+      onLogin(response.data);
+    } catch (error) {
+      console.error('Login error:', error);
+      alert('Error al iniciar sesión. Intenta de nuevo.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 flex flex-col items-center justify-center p-4">
+      {/* Logo */}
+      <div className="text-6xl mb-8 animate-bounce">
+        ☔
+      </div>
+
+      {/* Title */}
+      <h1 className="text-5xl md:text-6xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-pink-400 to-purple-400 mb-4">
+        Lluvia Live
+      </h1>
+      
+      <p className="text-gray-300 text-lg mb-12">
+        Conecta, Chatea, Vive
+      </p>
+
+      {/* Login Form */}
+      <div className="w-full max-w-md space-y-4">
+        <Input
+          type="text"
+          placeholder="Nombre de usuario"
+          value={username}
+          onChange={(e) => setUsername(e.target.value)}
+          onKeyPress={(e) => e.key === 'Enter' && handleLogin()}
+          className="bg-slate-800/50 border-pink-500/50 text-white placeholder:text-gray-400 h-14 text-lg"
+          disabled={loading}
+        />
+        
+        <Button
+          onClick={handleLogin}
+          disabled={loading || !username.trim()}
+          className="w-full h-14 text-lg font-semibold bg-gradient-to-r from-pink-500 to-purple-500 hover:from-pink-600 hover:to-purple-600 text-white"
+        >
+          🚀 Ingresar
+        </Button>
+      </div>
+
+      {/* Welcome Message */}
+      <p className="text-yellow-300 text-sm mt-8">
+        ✨ ¡Bienvenido a Lluvia Live! ✨
+      </p>
+    </div>
+  );
+};
+
+export default LoginPage;
+
+📁 ARCHIVO: /app/frontend/src/pages/Dashboard.js
+=================================================================
+import { useState, useEffect } from 'react';
+import axios from 'axios';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Card } from '@/components/ui/card';
+import SalasTab from '@/components/tabs/SalasTab';
+import JuegosTab from '@/components/tabs/JuegosTab';
+import RankingsTab from '@/components/tabs/RankingsTab';
+import ClanesTab from '@/components/tabs/ClanesTab';
+import EventosTab from '@/components/tabs/EventosTab';
+import PerfilTab from '@/components/tabs/PerfilTab';
+
+const Dashboard = ({ currentUser, onLogout, API }) => {
+  const [activeTab, setActiveTab] = useState('salas');
+  const [searchQuery, setSearchQuery] = useState('');
+
+  const tabs = [
+    { id: 'salas', label: '🏠 Salas', icon: '🏠' },
+    { id: 'juegos', label: '🎮 Juegos', icon: '🎮' },
+    { id: 'rankings', label: '🏆 Rankings', icon: '🏆' },
+    { id: 'clanes', label: '🛡️ Clanes', icon: '🛡️' },
+    { id: 'eventos', label: '🎉 Eventos', icon: '🎉' },
+    { id: 'perfil', label: '👤 Perfil', icon: '👤' },
+  ];
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900">
+      {/* Header */}
+      <header className="bg-slate-900/50 backdrop-blur-sm border-b border-pink-500/20 sticky top-0 z-50">
+        <div className="container mx-auto px-4 py-3">
+          <div className="flex items-center justify-between">
+            {/* Logo */}
+            <div className="flex items-center gap-3">
+              <span className="text-3xl">☔</span>
+              <span className="text-2xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-pink-400 to-purple-400">
+                Lluvia Live
+              </span>
+            </div>
+
+            {/* Tabs Navigation */}
+            <nav className="hidden md:flex gap-2">
+              {tabs.map((tab) => (
+                <Button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id)}
+                  variant={activeTab === tab.id ? 'default' : 'ghost'}
+                  className={`${
+                    activeTab === tab.id
+                      ? 'bg-gradient-to-r from-pink-500 to-purple-500 text-white'
+                      : 'text-gray-300 hover:text-white hover:bg-slate-800'
+                  }`}
+                >
+                  {tab.label}
+                </Button>
+              ))}
+            </nav>
+
+            {/* User Info */}
+            <div className="flex items-center gap-4">
+              <div className="flex items-center gap-2 bg-yellow-500/20 px-4 py-2 rounded-full border border-yellow-500/50">
+                <span className="text-yellow-400 font-bold">💰 {currentUser.coins}</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-white font-semibold">{currentUser.username}</span>
+                <img
+                  src={currentUser.avatar}
+                  alt={currentUser.username}
+                  className="w-10 h-10 rounded-full border-2 border-pink-500"
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Mobile Tabs */}
+          <div className="md:hidden mt-3 flex gap-2 overflow-x-auto pb-2">
+            {tabs.map((tab) => (
+              <Button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                size="sm"
+                variant={activeTab === tab.id ? 'default' : 'ghost'}
+                className={`whitespace-nowrap ${
+                  activeTab === tab.id
+                    ? 'bg-gradient-to-r from-pink-500 to-purple-500 text-white'
+                    : 'text-gray-300 hover:text-white hover:bg-slate-800'
+                }`}
+              >
+                {tab.icon} {tab.label.split(' ')[1]}
+              </Button>
+            ))}
+          </div>
+        </div>
+      </header>
+
+      {/* Main Content */}
+      <main className="container mx-auto px-4 py-6">
+        {activeTab === 'salas' && <SalasTab API={API} currentUser={currentUser} />}
+        {activeTab === 'juegos' && <JuegosTab API={API} currentUser={currentUser} />}
+        {activeTab === 'rankings' && <RankingsTab API={API} />}
+        {activeTab === 'clanes' && <ClanesTab API={API} currentUser={currentUser} />}
+        {activeTab === 'eventos' && <EventosTab API={API} />}
+        {activeTab === 'perfil' && <PerfilTab API={API} currentUser={currentUser} onLogout={onLogout} />}
+      </main>
+    </div>
+  );
+};
+
+export default Dashboard;
+
+📁 ARCHIVO: /app/frontend/src/pages/RoomView.js
+=================================================================
+import { useState, useEffect } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
+import axios from 'axios';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Card } from '@/components/ui/card';
+import { ScrollArea } from '@/components/ui/scroll-area';
+
+const RoomView = ({ currentUser, API }) => {
+  const { roomId } = useParams();
+  const navigate = useNavigate();
+  const [room, setRoom] = useState(null);
+  const [messages, setMessages] = useState([]);
+  const [newMessage, setNewMessage] = useState('');
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    loadRoomData();
+  }, [roomId]);
+
+  const loadRoomData = async () => {
+    try {
+      const [roomRes, messagesRes] = await Promise.all([
+        axios.get(`${API}/rooms/${roomId}`),
+        axios.get(`${API}/rooms/${roomId}/messages`)
+      ]);
+      setRoom(roomRes.data);
+      setMessages(messagesRes.data);
+    } catch (error) {
+      console.error('Error loading room:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSendMessage = async () => {
+    if (!newMessage.trim()) return;
+
+    try {
+      const response = await axios.post(`${API}/rooms/${roomId}/messages`, {
+        user_id: currentUser.id,
+        username: currentUser.username,
+        user_avatar: currentUser.avatar,
+        user_vip: currentUser.vip_level,
+        message: newMessage,
+        type: 'text'
+      });
+      setMessages([...messages, response.data]);
+      setNewMessage('');
+    } catch (error) {
+      console.error('Error sending message:', error);
+    }
+  };
+
+  const handleJoinSeat = async (seatIndex) => {
+    try {
+      const response = await axios.post(`${API}/rooms/${roomId}/join?user_id=${currentUser.id}&seat_index=${seatIndex}`);
+      setRoom(response.data);
+    } catch (error) {
+      console.error('Error joining seat:', error);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 flex items-center justify-center">
+        <div className="text-white text-2xl">Cargando sala...</div>
+      </div>
+    );
+  }
+
+  if (!room) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 flex items-center justify-center">
+        <div className="text-white text-2xl">Sala no encontrada</div>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className="min-h-screen bg-cover bg-center"
+      style={{
+        backgroundImage: `linear-gradient(rgba(0,0,0,0.7), rgba(0,0,0,0.7)), url(${room.background})`
+      }}
+    >
+      {/* Header */}
+      <header className="bg-slate-900/80 backdrop-blur-sm border-b border-pink-500/20 p-4">
+        <div className="container mx-auto flex items-center justify-between">
+          <Button
+            onClick={() => navigate('/dashboard')}
+            variant="ghost"
+            className="text-white"
+          >
+            ← Volver
+          </Button>
+          <div className="text-center">
+            <h1 className="text-2xl font-bold text-white">{room.name}</h1>
+            <p className="text-gray-300 text-sm">{room.topic}</p>
+          </div>
+          <div className="text-white">
+            <span className="text-green-400">•</span> {room.active_users} en línea
+          </div>
+        </div>
+      </header>
+
+      {/* Main Content */}
+      <div className="container mx-auto p-4 grid grid-cols-1 md:grid-cols-3 gap-4 h-[calc(100vh-100px)]">
+        {/* Seats Section */}
+        <div className="md:col-span-2">
+          <Card className="bg-slate-900/50 backdrop-blur-sm border-pink-500/20 p-6 h-full">
+            <h2 className="text-white text-xl font-bold mb-4">Asientos</h2>
+            <div className="grid grid-cols-3 gap-4">
+              {room.seats.map((seat, index) => (
+                <div
+                  key={index}
+                  onClick={() => !seat && handleJoinSeat(index)}
+                  className={`${
+                    seat
+                      ? 'bg-gradient-to-br from-purple-500/20 to-pink-500/20'
+                      : 'bg-slate-800/50 cursor-pointer hover:bg-slate-700/50'
+                  } border border-pink-500/30 rounded-lg p-4 flex flex-col items-center justify-center aspect-square`}
+                >
+                  {seat ? (
+                    <>
+                      <img
+                        src={seat.avatar}
+                        alt={seat.username}
+                        className="w-16 h-16 rounded-full border-2 border-pink-500 mb-2"
+                      />
+                      <span className="text-white text-sm font-semibold">{seat.username}</span>
+                      {seat.is_muted && <span className="text-gray-400 text-xs">🔇 Muted</span>}
+                    </>
+                  ) : (
+                    <div className="text-gray-400 text-center">
+                      <div className="text-3xl mb-2">🪑</div>
+                      <span className="text-xs">Asiento {index + 1}</span>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </Card>
+        </div>
+
+        {/* Chat Section */}
+        <div className="md:col-span-1">
+          <Card className="bg-slate-900/50 backdrop-blur-sm border-pink-500/20 p-4 h-full flex flex-col">
+            <h2 className="text-white text-xl font-bold mb-4">Chat</h2>
+            
+            <ScrollArea className="flex-1 mb-4">
+              <div className="space-y-2">
+                {messages.map((msg) => (
+                  <div key={msg.id} className="bg-slate-800/50 rounded-lg p-2">
+                    <div className="flex items-center gap-2 mb-1">
+                      <img
+                        src={msg.user_avatar}
+                        alt={msg.username}
+                        className="w-6 h-6 rounded-full"
+                      />
+                      <span className="text-pink-400 text-sm font-semibold">
+                        {msg.username}
+                      </span>
+                      {msg.user_vip !== 'normal' && (
+                        <span className="text-yellow-400 text-xs">👑</span>
+                      )}
+                    </div>
+                    <p className="text-white text-sm ml-8">{msg.message}</p>
+                  </div>
+                ))}
+              </div>
+            </ScrollArea>
+
+            <div className="flex gap-2">
+              <Input
+                value={newMessage}
+                onChange={(e) => setNewMessage(e.target.value)}
+                onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()}
+                placeholder="Escribe un mensaje..."
+                className="bg-slate-800 border-pink-500/50 text-white"
+              />
+              <Button
+                onClick={handleSendMessage}
+                className="bg-gradient-to-r from-pink-500 to-purple-500"
+              >
+                Enviar
+              </Button>
+            </div>
+          </Card>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default RoomView;
+
+📁 ARCHIVO: /app/frontend/src/components/tabs/SalasTab.js
+=================================================================
+import { useState, useEffect } from 'react';
+import axios from 'axios';
+import { useNavigate } from 'react-router-dom';
+import { Card } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+
+const SalasTab = ({ API, currentUser }) => {
+  const navigate = useNavigate();
+  const [rooms, setRooms] = useState([]);
+  const [reels, setReels] = useState([]);
+  const [photos, setPhotos] = useState([]);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    loadData();
+  }, []);
+
+  const loadData = async () => {
+    try {
+      const [roomsRes, reelsRes, photosRes] = await Promise.all([
+        axios.get(`${API}/rooms`),
+        axios.get(`${API}/reels`),
+        axios.get(`${API}/photos`)
+      ]);
+      setRooms(roomsRes.data);
+      setReels(reelsRes.data);
+      setPhotos(photosRes.data);
+    } catch (error) {
+      console.error('Error loading data:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const quickActions = [
+    { icon: '🏠', label: 'My Room', action: () => {} },
+    { icon: '💬', label: 'Quick Join', action: () => {} },
+    { icon: '🎬', label: 'Reels', action: () => {} },
+    { icon: '📸', label: 'Galería', action: () => {} },
+  ];
+
+  return (
+    <div className="space-y-6">
+      {/* Search Bar */}
+      <div className="relative">
+        <Input
+          type="text"
+          placeholder="🔍 Buscar Personas..."
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          className="w-full bg-slate-800/50 border-pink-500/30 text-white h-12 pl-4"
+        />
+        <div className="absolute right-4 top-1/2 -translate-y-1/2 flex items-center gap-2">
+          <div className="w-10 h-10 rounded-full bg-gradient-to-r from-yellow-400 to-orange-400 flex items-center justify-center">
+            🏆
+          </div>
+          <img
+            src={currentUser.avatar}
+            alt="Profile"
+            className="w-10 h-10 rounded-full border-2 border-pink-500"
+          />
+        </div>
+      </div>
+
+      {/* Quick Actions */}
+      <div className="grid grid-cols-4 gap-4">
+        {quickActions.map((action, index) => (
+          <button
+            key={index}
+            onClick={action.action}
+            className="bg-gradient-to-br from-pink-500/20 to-purple-500/20 hover:from-pink-500/30 hover:to-purple-500/30 border border-pink-500/30 rounded-2xl p-4 flex flex-col items-center gap-2 transition-all"
+          >
+            <div className="text-4xl">{action.icon}</div>
+            <span className="text-white text-sm font-semibold">{action.label}</span>
+          </button>
+        ))}
+      </div>
+
+      {/* Featured Banner */}
+      <Card className="bg-gradient-to-r from-purple-600 to-pink-600 border-0 p-6 relative overflow-hidden">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-white text-2xl font-bold mb-2">🎉 Encuentra tu Vibra</h2>
+            <p className="text-white/90">Unete a salas de streaming en vivo</p>
+          </div>
+          <div className="w-24 h-24 bg-gradient-to-br from-purple-400 to-pink-400 rounded-2xl"></div>
+        </div>
+      </Card>
+
+      {/* Rooms List */}
+      <div>
+        <h3 className="text-white text-xl font-bold mb-4 flex items-center gap-2">
+          🔑 Salas Activas
+        </h3>
+        <div className="space-y-4">
+          {rooms.map((room) => (
+            <Card
+              key={room.id}
+              onClick={() => navigate(`/room/${room.id}`)}
+              className="bg-slate-800/50 border-pink-500/20 hover:border-pink-500/50 transition-all cursor-pointer overflow-hidden"
+            >
+              <div className="flex items-center gap-4 p-4">
+                <div
+                  className="w-20 h-20 rounded-lg bg-cover bg-center"
+                  style={{ backgroundImage: `url(${room.background})` }}
+                ></div>
+                <div className="flex-1">
+                  <h4 className="text-white font-bold text-lg">{room.name}</h4>
+                  <p className="text-gray-400 text-sm">{room.description}</p>
+                  <div className="flex items-center gap-4 mt-2">
+                    {room.is_live && (
+                      <span className="text-red-500 text-sm flex items-center gap-1">
+                        <span className="w-2 h-2 bg-red-500 rounded-full animate-pulse"></span>
+                        EN VIVO
+                      </span>
+                    )}
+                    <span className="text-gray-400 text-sm">
+                      👥 {room.active_users} personas
+                    </span>
+                  </div>
+                </div>
+                <Button className="bg-gradient-to-r from-pink-500 to-purple-500">
+                  Entrar
+                </Button>
+              </div>
+            </Card>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default SalasTab;
