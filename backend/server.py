@@ -34,6 +34,7 @@ class User(BaseModel):
     coins: int = 1000
     diamonds: int = 0
     vip_level: str = "normal"  # normal, vip, svip, aristocrat
+    aristocrat_level: int = 0  # 0 = no aristocrat, 1-9 = aristocrat levels
     verified: bool = False
     ghost_mode: bool = False
     clan_id: Optional[str] = None

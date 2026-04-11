@@ -7,10 +7,12 @@ import RankingsTab from '@/components/tabs/RankingsTab';
 import ClanesTab from '@/components/tabs/ClanesTab';
 import EventosTab from '@/components/tabs/EventosTab';
 import PerfilTab from '@/components/tabs/PerfilTab';
+import { getAristocratInfo } from '@/lib/aristocrat';
 
 const Dashboard = ({ currentUser, onLogout, API }) => {
   const [activeTab, setActiveTab] = useState('popular');
   const [userCoins, setUserCoins] = useState(currentUser?.coins || 0);
+  const [userInfo, setUserInfo] = useState(currentUser);
 
   useEffect(() => {
     loadUserCoins();
@@ -20,10 +22,13 @@ const Dashboard = ({ currentUser, onLogout, API }) => {
     try {
       const response = await axios.get(`${API}/users/${currentUser.id}`);
       setUserCoins(response.data.coins);
+      setUserInfo(response.data);
     } catch (error) {
       console.error('Error loading user coins:', error);
     }
   };
+
+  const aristocratInfo = getAristocratInfo(userInfo?.aristocrat_level || 0);
 
   const tabs = [
     { id: 'mio', label: 'Mío' },
@@ -44,8 +49,13 @@ const Dashboard = ({ currentUser, onLogout, API }) => {
           <span className="text-gray-600">📡</span>
           <div className="flex items-center gap-1">
             <span className="text-yellow-500">🔋</span>
-            <span className="text-gray-800 font-bold">{userCoins > 999 ? Math.floor(userCoins / 1000) : userCoins}</span>
+            <span className="text-gray-800 font-bold">{userCoins > 999 ? Math.floor(userCoins / 1000) + 'K' : userCoins}</span>
           </div>
+          {userInfo?.aristocrat_level > 0 && (
+            <div className={`px-2 py-0.5 rounded-full bg-gradient-to-r ${aristocratInfo.bgGradient} text-white text-xs font-bold`}>
+              {aristocratInfo.icon}
+            </div>
+          )}
         </div>
       </div>
 

@@ -1,13 +1,16 @@
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { getAristocratInfo } from '@/lib/aristocrat';
 
 const PerfilTab = ({ API, currentUser, onLogout }) => {
+  const aristocratInfo = getAristocratInfo(currentUser?.aristocrat_level || 0);
+  
   const vipLevelColors = {
     normal: 'bg-gray-500',
     vip: 'bg-green-500',
     svip: 'bg-blue-500',
-    aristocrat: 'bg-purple-500'
+    aristocrat: `bg-gradient-to-r ${aristocratInfo.bgGradient}`
   };
 
   const stats = [
@@ -31,9 +34,15 @@ const PerfilTab = ({ API, currentUser, onLogout }) => {
           <div className="flex-1 text-center md:text-left">
             <h2 className="text-white text-3xl font-bold mb-2">{currentUser.username}</h2>
             <div className="flex flex-wrap gap-2 justify-center md:justify-start">
-              <Badge className={`${vipLevelColors[currentUser.vip_level]} text-white`}>
+              <Badge className={`${vipLevelColors[currentUser.vip_level]} text-white px-3 py-1`}>
                 👑 {currentUser.vip_level.toUpperCase()}
+                {currentUser.aristocrat_level > 0 && ` ${currentUser.aristocrat_level}`}
               </Badge>
+              {currentUser.aristocrat_level > 0 && (
+                <Badge className={`bg-gradient-to-r ${aristocratInfo.bgGradient} text-white px-3 py-1 font-bold`}>
+                  {aristocratInfo.icon} {aristocratInfo.name}
+                </Badge>
+              )}
               {currentUser.verified && (
                 <Badge className="bg-blue-500 text-white">
                   ✔️ Verificado
