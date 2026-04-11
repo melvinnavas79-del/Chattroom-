@@ -301,13 +301,26 @@ async def join_room(room_id: str, user_id: str = Query(...), seat_index: Optiona
     # If seat_index provided, try to take seat
     if seat_index is not None:
         user = await db.users.find_one({"id": user_id}, {"_id": 0})
-        if user and seat_index < len(room.get("seats", [])):
+        if user:
             seats = room.get("seats", [None] * 9)
-            if seats[seat_index] is None:
+            
+            # ARREGLO: Primero remover usuario de TODOS los asientos
+            for i in range(len(seats)):
+                if seats[i] and seats[i].get("user_id") == user_id:
+                    if i == seat_index:
+                        # Ya está en este asiento
+                        updated_room = await db.rooms.find_one({"id": room_id}, {"_id": 0})
+                        return updated_room
+                    # Remover del asiento anterior
+                    seats[i] = None
+            
+            # Verificar que el asiento esté libre
+            if seat_index < len(seats) and seats[seat_index] is None:
                 seats[seat_index] = {
                     "user_id": user_id,
                     "username": user["username"],
                     "avatar": user["avatar"],
+                    "level": user["level"],
                     "is_muted": False
                 }
                 await db.rooms.update_one(
