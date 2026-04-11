@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { useWebRTC } from '@/hooks/useWebRTC';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
@@ -19,37 +20,15 @@ const RoomView = ({ currentUser, API }) => {
   const [gifts, setGifts] = useState([]);
   const [selectedGift, setSelectedGift] = useState(null);
   const [userCoins, setUserCoins] = useState(currentUser?.coins || 0);
-  const [speakingUsers, setSpeakingUsers] = useState(new Set());
+  
+  // WebRTC Audio Hook
+  const { isMuted, isConnected, speakingUsers, toggleMute } = useWebRTC(roomId, currentUser, API);
 
   useEffect(() => {
     loadRoomData();
     loadGifts();
     loadUserCoins();
-    
-    // Simulate random speaking users
-    const interval = setInterval(() => {
-      if (room?.seats) {
-        const activeSeatIndices = room.seats
-          .map((seat, idx) => seat ? idx : null)
-          .filter(idx => idx !== null);
-        
-        if (activeSeatIndices.length > 0) {
-          const randomIdx = activeSeatIndices[Math.floor(Math.random() * activeSeatIndices.length)];
-          setSpeakingUsers(prev => {
-            const newSet = new Set(prev);
-            if (newSet.has(randomIdx)) {
-              newSet.delete(randomIdx);
-            } else {
-              newSet.add(randomIdx);
-            }
-            return newSet;
-          });
-        }
-      }
-    }, 2000);
-
-    return () => clearInterval(interval);
-  }, [roomId, room?.seats]);
+  }, [roomId]);
 
   const loadUserCoins = async () => {
     try {
@@ -112,11 +91,14 @@ const RoomView = ({ currentUser, API }) => {
     }
   };
 
-  const toggleMute = async (seatIndex) => {
+  const handleToggleMute = async (seatIndex) => {
     if (!room?.seats[seatIndex]) return;
     
     const seats = [...room.seats];
     if (seats[seatIndex].user_id === currentUser.id) {
+      // Toggle mute via WebRTC
+      toggleMute();
+      
       seats[seatIndex].is_muted = !seats[seatIndex].is_muted;
       
       try {
@@ -219,8 +201,8 @@ const RoomView = ({ currentUser, API }) => {
               <span className="text-yellow-400 font-bold">💰 {userCoins.toLocaleString()}</span>
             </div>
             <div className="text-white flex items-center gap-2">
-              <span className="text-green-400 animate-pulse">●</span>
-              {room.active_users} en línea
+              <span className={`${isConnected ? 'text-green-400' : 'text-red-400'} animate-pulse`}>●</span>
+              {room.active_users} en línea {isConnected && '🎤'}
             </div>
           </div>
         </div>
@@ -245,7 +227,9 @@ const RoomView = ({ currentUser, API }) => {
                 const isSpeaking = speakingUsers.has(index);
                 const isMuted = seat?.is_muted || false;
                 
-                return (
+                const userIsSpeaking = seat && speakingUsers.has(seat.user_id);
+              
+              return (
                   <div
                     key={index}
                     onClick={() => !seat && handleJoinSeat(index)}
@@ -262,21 +246,21 @@ const RoomView = ({ currentUser, API }) => {
                           }
                           border-2 rounded-2xl p-3 w-24 h-24 flex flex-col items-center justify-center
                           transition-all duration-300
-                          ${isSpeaking && seat ? 'ring-4 ring-green-400 ring-opacity-75 animate-pulse' : ''}
+                          ${userIsSpeaking ? 'ring-4 ring-green-400 ring-opacity-75 animate-pulse' : ''}
                         `}
                       >
                         {seat ? (
                           <>
                             {/* Avatar with speaking animation */}
-                            <div className={`relative ${isSpeaking ? 'animate-pulse' : ''}`}>
+                            <div className={`relative ${userIsSpeaking ? 'animate-pulse' : ''}`}>
                               <img
                                 src={seat.avatar}
                                 alt={seat.username}
                                 className={`w-12 h-12 rounded-full border-2 ${
-                                  isSpeaking ? 'border-green-400' : 'border-pink-400'
+                                  userIsSpeaking ? 'border-green-400' : 'border-pink-400'
                                 }`}
                               />
-                              {isSpeaking && (
+                              {userIsSpeaking && (
                                 <div className="absolute inset-0 rounded-full bg-green-400/20 animate-ping"></div>
                               )}
                             </div>
@@ -290,15 +274,15 @@ const RoomView = ({ currentUser, API }) => {
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
-                                toggleMute(index);
+                                handleToggleMute(index);
                               }}
                               className={`absolute -bottom-2 -right-2 w-8 h-8 rounded-full flex items-center justify-center transition-all ${
-                                isMuted 
+                                seat.is_muted 
                                   ? 'bg-red-500 hover:bg-red-600' 
                                   : 'bg-green-500 hover:bg-green-600'
                               }`}
                             >
-                              {isMuted ? '🔇' : '🎤'}
+                              {seat.is_muted ? '🔇' : '🎤'}
                             </button>
                           </>
                         ) : (

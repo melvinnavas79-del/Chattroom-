@@ -1,4 +1,4 @@
-from fastapi import FastAPI, APIRouter, HTTPException, Query
+from fastapi import FastAPI, APIRouter, HTTPException, Query, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
@@ -11,6 +11,7 @@ from typing import List, Optional, Dict, Any
 import uuid
 from datetime import datetime, timezone, timedelta
 import random
+import json
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -22,6 +23,47 @@ db = client[os.environ['DB_NAME']]
 
 app = FastAPI(title="Lluvia Live API")
 api_router = APIRouter(prefix="/api")
+
+# WebRTC Signaling - Connection Manager
+class ConnectionManager:
+    def __init__(self):
+        self.active_connections: Dict[str, Dict[str, WebSocket]] = {}
+    
+    async def connect(self, websocket: WebSocket, room_id: str, user_id: str):
+        await websocket.accept()
+        if room_id not in self.active_connections:
+            self.active_connections[room_id] = {}
+        self.active_connections[room_id][user_id] = websocket
+        logging.info(f"User {user_id} connected to room {room_id}")
+    
+    def disconnect(self, room_id: str, user_id: str):
+        if room_id in self.active_connections:
+            if user_id in self.active_connections[room_id]:
+                del self.active_connections[room_id][user_id]
+                logging.info(f"User {user_id} disconnected from room {room_id}")
+            if not self.active_connections[room_id]:
+                del self.active_connections[room_id]
+    
+    async def send_to_user(self, room_id: str, user_id: str, message: dict):
+        if room_id in self.active_connections:
+            if user_id in self.active_connections[room_id]:
+                await self.active_connections[room_id][user_id].send_json(message)
+    
+    async def broadcast_to_room(self, room_id: str, message: dict, exclude_user: str = None):
+        if room_id in self.active_connections:
+            for user_id, connection in self.active_connections[room_id].items():
+                if user_id != exclude_user:
+                    try:
+                        await connection.send_json(message)
+                    except Exception as e:
+                        logging.error(f"Error broadcasting to {user_id}: {e}")
+    
+    def get_room_users(self, room_id: str) -> List[str]:
+        if room_id in self.active_connections:
+            return list(self.active_connections[room_id].keys())
+        return []
+
+manager = ConnectionManager()
 
 # ==================== MODELS ====================
 
@@ -865,18 +907,102 @@ async def modify_user_coins(user_id: str, admin_id: str = Query(...), amount: in
 @api_router.get("/admin/stats")
 async def get_admin_stats(admin_id: str = Query(...)):
     """Get statistics"""
-    admin = await db.users.find_one({"id": admin_id}, {"_id": 0})
-    if not admin or admin.get("role") not in ["admin", "supervisor"]:
-        raise HTTPException(status_code=403, detail="No tienes permisos")
+
+# ==================== WEBRTC SIGNALING ENDPOINTS ====================
+
+@app.websocket("/ws/room/{room_id}/{user_id}")
+async def websocket_endpoint(websocket: WebSocket, room_id: str, user_id: str):
+    """WebRTC signaling server for audio communication"""
+    await manager.connect(websocket, room_id, user_id)
     
-    total_users = await db.users.count_documents({})
-    total_rooms = await db.rooms.count_documents({})
-    total_messages = await db.messages.count_documents({})
-    banned_users = await db.users.count_documents({"banned": True})
+    try:
+        # Notify other users that a new user joined
+        await manager.broadcast_to_room(
+            room_id,
+            {
+                "type": "user-joined",
+                "userId": user_id,
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            },
+            exclude_user=user_id
+        )
+        
+        # Send list of existing users to the new user
+        existing_users = manager.get_room_users(room_id)
+        await manager.send_to_user(
+            room_id,
+            user_id,
+            {
+                "type": "existing-users",
+                "users": [u for u in existing_users if u != user_id]
+            }
+        )
+        
+        # Handle signaling messages
+        while True:
+            data = await websocket.receive_text()
+            message = json.loads(data)
+            
+            message_type = message.get("type")
+            target_user = message.get("targetUser")
+            
+            if message_type == "offer":
+                # Forward WebRTC offer to target user
+                await manager.send_to_user(
+                    room_id,
+                    target_user,
+                    {
+                        "type": "offer",
+                        "offer": message.get("offer"),
+                        "fromUser": user_id
+                    }
+                )
+            
+            elif message_type == "answer":
+                # Forward WebRTC answer to target user
+                await manager.send_to_user(
+                    room_id,
+                    target_user,
+                    {
+                        "type": "answer",
+                        "answer": message.get("answer"),
+                        "fromUser": user_id
+                    }
+                )
+            
+            elif message_type == "ice-candidate":
+                # Forward ICE candidate to target user
+                await manager.send_to_user(
+                    room_id,
+                    target_user,
+                    {
+                        "type": "ice-candidate",
+                        "candidate": message.get("candidate"),
+                        "fromUser": user_id
+                    }
+                )
+            
+            elif message_type == "mute":
+                # Broadcast mute status
+                await manager.broadcast_to_room(
+                    room_id,
+                    {
+                        "type": "user-muted",
+                        "userId": user_id,
+                        "muted": message.get("muted", True)
+                    }
+                )
     
-    return {
-        "total_users": total_users,
-        "total_rooms": total_rooms,
-        "total_messages": total_messages,
-        "banned_users": banned_users
-    }
+    except WebSocketDisconnect:
+        manager.disconnect(room_id, user_id)
+        # Notify others that user left
+        await manager.broadcast_to_room(
+            room_id,
+            {
+                "type": "user-left",
+                "userId": user_id
+            }
+        )
+    except Exception as e:
+        logging.error(f"WebSocket error for user {user_id} in room {room_id}: {e}")
+        manager.disconnect(room_id, user_id)
