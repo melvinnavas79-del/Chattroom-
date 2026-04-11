@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import axios from 'axios';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -6,6 +6,11 @@ import { Input } from '@/components/ui/input';
 const LoginPage = ({ onLogin, API }) => {
   const [username, setUsername] = useState('');
   const [loading, setLoading] = useState(false);
+
+  // Clear any old session data on mount
+  useEffect(() => {
+    localStorage.removeItem('lluvia_user');
+  }, []);
 
   const handleLogin = async () => {
     if (!username.trim()) return;

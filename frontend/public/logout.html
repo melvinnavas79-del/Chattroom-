@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Logout - Lluvia Live</title>
+    <style>
+        body {
+            background: linear-gradient(135deg, #00BCD4, #E91E63);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-family: sans-serif;
+            color: white;
+        }
+        .container {
+            text-align: center;
+            background: rgba(255,255,255,0.1);
+            padding: 40px;
+            border-radius: 20px;
+        }
+        button {
+            background: white;
+            color: #E91E63;
+            border: none;
+            padding: 15px 30px;
+            font-size: 18px;
+            border-radius: 10px;
+            cursor: pointer;
+            margin-top: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔄 Limpiando Sesión</h1>
+        <p>Cerrando sesión y limpiando caché...</p>
+        <button onclick="forceLogout()">Volver al Login</button>
+    </div>
+    <script>
+        function forceLogout() {
+            localStorage.clear();
+            sessionStorage.clear();
+            window.location.href = '/';
+        }
+        // Auto logout after 2 seconds
+        setTimeout(forceLogout, 2000);
+    </script>
+</body>
+</html>
