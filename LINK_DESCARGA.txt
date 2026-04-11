@@ -1,0 +1,24 @@
+========================================
+🔗 CÓMO DESCARGAR TU CÓDIGO LLUVIA LIVE
+========================================
+
+PASO 1: COPIA ESTE COMANDO
+---------------------------
+En tu computadora (no en Emergent), abre una terminal y pega:
+
+curl -o lluvia-live.tar.gz https://tu-url-emergent.emergentagi.com/files/lluvia-live-completo.tar.gz
+
+
+PASO 2: O USA GITHUB
+---------------------
+Si conectaste tu GitHub a Emergent:
+
+1. Ve a: https://github.com/melvinnavas79-del/Chattroom-
+2. Haz clic en "Save to GitHub" en Emergent
+3. El código se subirá automáticamente
+
+
+PASO 3: DESCARGA MANUAL (SI NADA FUNCIONA)
+-------------------------------------------
+Te voy a dar el código completo en partes para que lo copies.
+
