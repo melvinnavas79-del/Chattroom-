@@ -6,6 +6,9 @@ from motor.motor_asyncio import AsyncIOMotorClient
 import os
 import logging
 from pathlib import Path
+import paypalrestsdk
+from paypalrestsdk import Payment as PayPalPayment
+
 from pydantic import BaseModel, Field, ConfigDict
 from typing import List, Optional, Dict, Any
 import uuid
@@ -25,6 +28,14 @@ app = FastAPI(title="Lluvia Live API")
 api_router = APIRouter(prefix="/api")
 
 # WebRTC Signaling - Connection Manager
+
+# PayPal Configuration
+paypalrestsdk.configure({
+    "mode": os.environ.get('PAYPAL_MODE', 'sandbox'),
+    "client_id": os.environ.get('PAYPAL_CLIENT_ID'),
+    "client_secret": os.environ.get('PAYPAL_SECRET')
+})
+
 class ConnectionManager:
     def __init__(self):
         self.active_connections: Dict[str, Dict[str, WebSocket]] = {}
