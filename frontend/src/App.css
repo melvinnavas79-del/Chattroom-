@@ -14,30 +14,26 @@ body {
     sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-}
-
-code {
-  font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
-    monospace;
+  background: linear-gradient(180deg, #E0F7FA 0%, #FCE4EC 30%, #FFFFFF 60%);
 }
 
 /* Custom scrollbar */
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 6px;
+  height: 6px;
 }
 
 ::-webkit-scrollbar-track {
-  background: rgba(0, 0, 0, 0.1);
+  background: #f0f0f0;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: linear-gradient(to bottom, #ec4899, #a855f7);
-  border-radius: 4px;
+  background: linear-gradient(to bottom, #00BCD4, #E91E63);
+  border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: linear-gradient(to bottom, #db2777, #9333ea);
+  background: linear-gradient(to bottom, #0097A7, #C2185B);
 }
 
 /* Animations */
@@ -52,11 +48,15 @@ code {
   }
 }
 
-.animate-fadeIn {
-  animation: fadeIn 0.3s ease-in-out;
+@keyframes pulse-soft {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.7;
+  }
 }
 
-/* Shimmer effect */
 @keyframes shimmer {
   0% {
     background-position: -1000px 0;
@@ -66,13 +66,90 @@ code {
   }
 }
 
+.animate-fadeIn {
+  animation: fadeIn 0.3s ease-in-out;
+}
+
+.pulse-soft {
+  animation: pulse-soft 2s ease-in-out infinite;
+}
+
 .shimmer {
   animation: shimmer 2s infinite linear;
   background: linear-gradient(
     to right,
     rgba(255, 255, 255, 0) 0%,
-    rgba(255, 255, 255, 0.3) 50%,
+    rgba(255, 255, 255, 0.6) 50%,
     rgba(255, 255, 255, 0) 100%
   );
   background-size: 1000px 100%;
+}
+
+/* Custom gradient backgrounds */
+.gradient-cyan-pink {
+  background: linear-gradient(135deg, #00BCD4 0%, #E91E63 100%);
+}
+
+.gradient-cyan-light {
+  background: linear-gradient(135deg, #B2EBF2 0%, #80DEEA 100%);
+}
+
+.gradient-pink-light {
+  background: linear-gradient(135deg, #F8BBD0 0%, #F48FB1 100%);
+}
+
+.gradient-blue-light {
+  background: linear-gradient(135deg, #BBDEFB 0%, #90CAF9 100%);
+}
+
+.gradient-gold {
+  background: linear-gradient(135deg, #FFD700 0%, #FFA500 100%);
+}
+
+/* Tab active indicator */
+.tab-active {
+  position: relative;
+}
+
+.tab-active::after {
+  content: '';
+  position: absolute;
+  bottom: -2px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 40px;
+  height: 3px;
+  background: #00BCD4;
+  border-radius: 2px;
+}
+
+/* Badge styles */
+.badge-premium {
+  background: linear-gradient(135deg, #FFD700 0%, #FFA500 100%);
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 10px;
+  font-weight: bold;
+  color: white;
+  text-transform: uppercase;
+}
+
+.badge-friends {
+  background: linear-gradient(135deg, #FF9800 0%, #FF5722 100%);
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 10px;
+  font-weight: bold;
+  color: white;
+}
+
+/* Card shadows */
+.card-shadow {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.card-shadow-hover:hover {
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+  transform: translateY(-2px);
+  transition: all 0.3s ease;
 }

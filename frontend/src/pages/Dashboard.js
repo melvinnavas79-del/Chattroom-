@@ -1,8 +1,6 @@
 import { useState, useEffect } from 'react';
 import axios from 'axios';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Card } from '@/components/ui/card';
 import SalasTab from '@/components/tabs/SalasTab';
 import JuegosTab from '@/components/tabs/JuegosTab';
 import RankingsTab from '@/components/tabs/RankingsTab';
@@ -11,8 +9,7 @@ import EventosTab from '@/components/tabs/EventosTab';
 import PerfilTab from '@/components/tabs/PerfilTab';
 
 const Dashboard = ({ currentUser, onLogout, API }) => {
-  const [activeTab, setActiveTab] = useState('salas');
-  const [searchQuery, setSearchQuery] = useState('');
+  const [activeTab, setActiveTab] = useState('popular');
   const [userCoins, setUserCoins] = useState(currentUser?.coins || 0);
 
   useEffect(() => {
@@ -29,92 +26,122 @@ const Dashboard = ({ currentUser, onLogout, API }) => {
   };
 
   const tabs = [
-    { id: 'salas', label: '🏠 Salas', icon: '🏠' },
-    { id: 'juegos', label: '🎮 Juegos', icon: '🎮' },
-    { id: 'rankings', label: '🏆 Rankings', icon: '🏆' },
-    { id: 'clanes', label: '🛡️ Clanes', icon: '🛡️' },
-    { id: 'eventos', label: '🎉 Eventos', icon: '🎉' },
-    { id: 'perfil', label: '👤 Perfil', icon: '👤' },
+    { id: 'mio', label: 'Mío' },
+    { id: 'popular', label: 'Popular' },
+    { id: 'descubrir', label: 'Descubrir' },
+    { id: 'eventos', label: 'Event' },
   ];
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900">
-      {/* Header */}
-      <header className="bg-slate-900/50 backdrop-blur-sm border-b border-pink-500/20 sticky top-0 z-50">
-        <div className="container mx-auto px-4 py-3">
-          <div className="flex items-center justify-between">
-            {/* Logo */}
-            <div className="flex items-center gap-3">
-              <span className="text-3xl">☔</span>
-              <span className="text-2xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-pink-400 to-purple-400">
-                Lluvia Live
-              </span>
-            </div>
-
-            {/* Tabs Navigation */}
-            <nav className="hidden md:flex gap-2">
-              {tabs.map((tab) => (
-                <Button
-                  key={tab.id}
-                  onClick={() => setActiveTab(tab.id)}
-                  variant={activeTab === tab.id ? 'default' : 'ghost'}
-                  className={`${
-                    activeTab === tab.id
-                      ? 'bg-gradient-to-r from-pink-500 to-purple-500 text-white'
-                      : 'text-gray-300 hover:text-white hover:bg-slate-800'
-                  }`}
-                >
-                  {tab.label}
-                </Button>
-              ))}
-            </nav>
-
-            {/* User Info */}
-            <div className="flex items-center gap-4">
-              <div className="flex items-center gap-2 bg-yellow-500/20 px-4 py-2 rounded-full border border-yellow-500/50">
-                <span className="text-yellow-400 font-bold">💰 {userCoins.toLocaleString()}</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="text-white font-semibold">{currentUser.username}</span>
-                <img
-                  src={currentUser.avatar}
-                  alt={currentUser.username}
-                  className="w-10 h-10 rounded-full border-2 border-pink-500"
-                />
-              </div>
-            </div>
-          </div>
-
-          {/* Mobile Tabs */}
-          <div className="md:hidden mt-3 flex gap-2 overflow-x-auto pb-2">
-            {tabs.map((tab) => (
-              <Button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
-                size="sm"
-                variant={activeTab === tab.id ? 'default' : 'ghost'}
-                className={`whitespace-nowrap ${
-                  activeTab === tab.id
-                    ? 'bg-gradient-to-r from-pink-500 to-purple-500 text-white'
-                    : 'text-gray-300 hover:text-white hover:bg-slate-800'
-                }`}
-              >
-                {tab.icon} {tab.label.split(' ')[1]}
-              </Button>
-            ))}
+    <div className="min-h-screen bg-gradient-to-b from-cyan-50 via-pink-50 to-white">
+      {/* Status Bar */}
+      <div className="bg-transparent px-4 py-2 flex items-center justify-between text-sm">
+        <span className="text-gray-600 font-semibold">
+          {new Date().toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}
+        </span>
+        <div className="flex items-center gap-2">
+          <span className="text-gray-600">📶</span>
+          <span className="text-gray-600">📡</span>
+          <div className="flex items-center gap-1">
+            <span className="text-yellow-500">🔋</span>
+            <span className="text-gray-800 font-bold">{userCoins > 999 ? Math.floor(userCoins / 1000) : userCoins}</span>
           </div>
         </div>
-      </header>
+      </div>
+
+      {/* Tabs Navigation */}
+      <div className="bg-white/80 backdrop-blur-sm px-4 py-3 sticky top-0 z-50 shadow-sm">
+        <div className="flex items-center justify-between">
+          {tabs.map((tab) => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className={`px-4 py-2 text-base font-semibold transition-all relative ${
+                activeTab === tab.id
+                  ? 'text-gray-900 tab-active'
+                  : 'text-gray-500'
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
+          <button className="text-gray-700 text-xl">🔍</button>
+        </div>
+      </div>
 
       {/* Main Content */}
-      <main className="container mx-auto px-4 py-6">
-        {activeTab === 'salas' && <SalasTab API={API} currentUser={currentUser} />}
-        {activeTab === 'juegos' && <JuegosTab API={API} currentUser={currentUser} />}
-        {activeTab === 'rankings' && <RankingsTab API={API} />}
-        {activeTab === 'clanes' && <ClanesTab API={API} currentUser={currentUser} />}
+      <main className="pb-20">
+        {activeTab === 'mio' && <PerfilTab API={API} currentUser={currentUser} onLogout={onLogout} />}
+        {activeTab === 'popular' && <SalasTab API={API} currentUser={currentUser} />}
+        {activeTab === 'descubrir' && <RankingsTab API={API} />}
         {activeTab === 'eventos' && <EventosTab API={API} />}
-        {activeTab === 'perfil' && <PerfilTab API={API} currentUser={currentUser} onLogout={onLogout} />}
       </main>
+
+      {/* Bottom Navigation */}
+      <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-4 py-2 flex items-center justify-around z-50">
+        <button
+          onClick={() => setActiveTab('popular')}
+          className={`flex flex-col items-center gap-1 ${
+            activeTab === 'popular' ? 'text-cyan-500' : 'text-gray-400'
+          }`}
+        >
+          <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
+            activeTab === 'popular' ? 'bg-cyan-500' : 'bg-gray-200'
+          }`}>
+            <span className={activeTab === 'popular' ? 'text-white text-xl' : 'text-gray-500 text-xl'}>
+              🎤
+            </span>
+          </div>
+          <span className="text-xs font-medium">por la sala</span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab('juegos')}
+          className="flex flex-col items-center gap-1 text-gray-400"
+        >
+          <div className="w-10 h-10 rounded-full bg-gray-200 flex items-center justify-center">
+            <span className="text-gray-500 text-xl">🎮</span>
+          </div>
+          <span className="text-xs font-medium">Juegos</span>
+        </button>
+
+        <button className="flex flex-col items-center gap-1 text-gray-400">
+          <div className="w-10 h-10 rounded-full bg-gray-200 flex items-center justify-center">
+            <span className="text-gray-500 text-xl">⏰</span>
+          </div>
+          <span className="text-xs font-medium">Momento</span>
+        </button>
+
+        <button className="flex flex-col items-center gap-1 text-gray-400 relative">
+          <div className="w-10 h-10 rounded-full bg-gray-200 flex items-center justify-center">
+            <span className="text-gray-500 text-xl">💬</span>
+          </div>
+          <span className="text-xs font-medium">Mensaje</span>
+          <span className="absolute top-0 right-2 bg-red-500 text-white text-xs w-5 h-5 rounded-full flex items-center justify-center font-bold">
+            2
+          </span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab('mio')}
+          className={`flex flex-col items-center gap-1 relative ${
+            activeTab === 'mio' ? 'text-cyan-500' : 'text-gray-400'
+          }`}
+        >
+          <div className="w-10 h-10 rounded-full bg-gray-200 flex items-center justify-center overflow-hidden">
+            <img src={currentUser.avatar} alt="yo" className="w-full h-full object-cover" />
+          </div>
+          <span className="text-xs font-medium">yo</span>
+          <span className="absolute top-0 right-2 bg-red-500 w-2 h-2 rounded-full"></span>
+        </button>
+      </nav>
+
+      {/* Juegos Tab Content */}
+      {activeTab === 'juegos' && (
+        <div className="px-4 py-6">
+          <JuegosTab API={API} currentUser={currentUser} />
+        </div>
+      )}
     </div>
   );
 };
