@@ -6,6 +6,9 @@ import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
 
+const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
+const API = `${BACKEND_URL}/api`;
+
 const RoomView = ({ currentUser, API }) => {
   const { roomId } = useParams();
   const navigate = useNavigate();
@@ -13,10 +16,49 @@ const RoomView = ({ currentUser, API }) => {
   const [messages, setMessages] = useState([]);
   const [newMessage, setNewMessage] = useState('');
   const [loading, setLoading] = useState(true);
+  const [gifts, setGifts] = useState([]);
+  const [selectedGift, setSelectedGift] = useState(null);
+  const [userCoins, setUserCoins] = useState(currentUser?.coins || 0);
+  const [speakingUsers, setSpeakingUsers] = useState(new Set());
 
   useEffect(() => {
     loadRoomData();
-  }, [roomId]);
+    loadGifts();
+    loadUserCoins();
+    
+    // Simulate random speaking users
+    const interval = setInterval(() => {
+      if (room?.seats) {
+        const activeSeatIndices = room.seats
+          .map((seat, idx) => seat ? idx : null)
+          .filter(idx => idx !== null);
+        
+        if (activeSeatIndices.length > 0) {
+          const randomIdx = activeSeatIndices[Math.floor(Math.random() * activeSeatIndices.length)];
+          setSpeakingUsers(prev => {
+            const newSet = new Set(prev);
+            if (newSet.has(randomIdx)) {
+              newSet.delete(randomIdx);
+            } else {
+              newSet.add(randomIdx);
+            }
+            return newSet;
+          });
+        }
+      }
+    }, 2000);
+
+    return () => clearInterval(interval);
+  }, [roomId, room?.seats]);
+
+  const loadUserCoins = async () => {
+    try {
+      const response = await axios.get(`${API}/users/${currentUser.id}`);
+      setUserCoins(response.data.coins);
+    } catch (error) {
+      console.error('Error loading user coins:', error);
+    }
+  };
 
   const loadRoomData = async () => {
     try {
@@ -30,6 +72,15 @@ const RoomView = ({ currentUser, API }) => {
       console.error('Error loading room:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadGifts = async () => {
+    try {
+      const response = await axios.get(`${API}/gifts`);
+      setGifts(response.data);
+    } catch (error) {
+      console.error('Error loading gifts:', error);
     }
   };
 
@@ -61,6 +112,57 @@ const RoomView = ({ currentUser, API }) => {
     }
   };
 
+  const toggleMute = async (seatIndex) => {
+    if (!room?.seats[seatIndex]) return;
+    
+    const seats = [...room.seats];
+    if (seats[seatIndex].user_id === currentUser.id) {
+      seats[seatIndex].is_muted = !seats[seatIndex].is_muted;
+      
+      try {
+        await axios.post(`${API}/rooms/${roomId}/join?user_id=${currentUser.id}&seat_index=${seatIndex}`);
+        setRoom({ ...room, seats });
+      } catch (error) {
+        console.error('Error toggling mute:', error);
+      }
+    }
+  };
+
+  const handleSendGift = async (gift) => {
+    if (userCoins < gift.price) {
+      alert('¡No tienes suficientes monedas!');
+      return;
+    }
+
+    // Find room owner or first seated user as receiver
+    const receiver = room.seats.find(s => s !== null);
+    if (!receiver) {
+      alert('No hay nadie para recibir el regalo');
+      return;
+    }
+
+    try {
+      await axios.post(`${API}/gifts/send`, {
+        sender_id: currentUser.id,
+        receiver_id: receiver.user_id,
+        gift_id: gift.id,
+        room_id: roomId
+      });
+
+      // Update coins
+      setUserCoins(userCoins - gift.price);
+      
+      // Reload messages to show gift
+      const messagesRes = await axios.get(`${API}/rooms/${roomId}/messages`);
+      setMessages(messagesRes.data);
+      
+      setSelectedGift(null);
+    } catch (error) {
+      console.error('Error sending gift:', error);
+      alert('Error al enviar el regalo');
+    }
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 flex items-center justify-center">
@@ -77,81 +179,192 @@ const RoomView = ({ currentUser, API }) => {
     );
   }
 
+  const getSeatPosition = (index) => {
+    const centerX = 50;
+    const centerY = 50;
+    const radius = 35;
+    const angle = (index * (360 / 9) - 90) * (Math.PI / 180);
+    
+    return {
+      left: `${centerX + radius * Math.cos(angle)}%`,
+      top: `${centerY + radius * Math.sin(angle)}%`
+    };
+  };
+
   return (
     <div
       className="min-h-screen bg-cover bg-center"
       style={{
-        backgroundImage: `linear-gradient(rgba(0,0,0,0.7), rgba(0,0,0,0.7)), url(${room.background})`
+        backgroundImage: `linear-gradient(rgba(0,0,0,0.8), rgba(0,0,0,0.8)), url(${room.background})`
       }}
     >
       {/* Header */}
-      <header className="bg-slate-900/80 backdrop-blur-sm border-b border-pink-500/20 p-4">
+      <header className="bg-slate-900/90 backdrop-blur-sm border-b border-pink-500/30 p-4 sticky top-0 z-50">
         <div className="container mx-auto flex items-center justify-between">
           <Button
             onClick={() => navigate('/dashboard')}
             variant="ghost"
-            className="text-white"
+            className="text-white hover:text-pink-400"
           >
             ← Volver
           </Button>
           <div className="text-center">
-            <h1 className="text-2xl font-bold text-white">{room.name}</h1>
+            <h1 className="text-2xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-pink-400 to-purple-400">
+              {room.name}
+            </h1>
             <p className="text-gray-300 text-sm">{room.topic}</p>
           </div>
-          <div className="text-white">
-            <span className="text-green-400">•</span> {room.active_users} en línea
+          <div className="flex items-center gap-3">
+            <div className="bg-yellow-500/20 px-4 py-2 rounded-full border border-yellow-500/50">
+              <span className="text-yellow-400 font-bold">💰 {userCoins.toLocaleString()}</span>
+            </div>
+            <div className="text-white flex items-center gap-2">
+              <span className="text-green-400 animate-pulse">●</span>
+              {room.active_users} en línea
+            </div>
           </div>
         </div>
       </header>
 
       {/* Main Content */}
-      <div className="container mx-auto p-4 grid grid-cols-1 md:grid-cols-3 gap-4 h-[calc(100vh-100px)]">
-        {/* Seats Section */}
-        <div className="md:col-span-2">
-          <Card className="bg-slate-900/50 backdrop-blur-sm border-pink-500/20 p-6 h-full">
-            <h2 className="text-white text-xl font-bold mb-4">Asientos</h2>
-            <div className="grid grid-cols-3 gap-4">
-              {room.seats.map((seat, index) => (
-                <div
-                  key={index}
-                  onClick={() => !seat && handleJoinSeat(index)}
-                  className={`${
-                    seat
-                      ? 'bg-gradient-to-br from-purple-500/20 to-pink-500/20'
-                      : 'bg-slate-800/50 cursor-pointer hover:bg-slate-700/50'
-                  } border border-pink-500/30 rounded-lg p-4 flex flex-col items-center justify-center aspect-square`}
-                >
-                  {seat ? (
-                    <>
-                      <img
-                        src={seat.avatar}
-                        alt={seat.username}
-                        className="w-16 h-16 rounded-full border-2 border-pink-500 mb-2"
-                      />
-                      <span className="text-white text-sm font-semibold">{seat.username}</span>
-                      {seat.is_muted && <span className="text-gray-400 text-xs">🔇 Muted</span>}
-                    </>
-                  ) : (
-                    <div className="text-gray-400 text-center">
-                      <div className="text-3xl mb-2">🪑</div>
-                      <span className="text-xs">Asiento {index + 1}</span>
+      <div className="container mx-auto p-4 grid grid-cols-1 lg:grid-cols-3 gap-6 h-[calc(100vh-100px)]">
+        
+        {/* Seats Section - Circle Layout */}
+        <div className="lg:col-span-2">
+          <Card className="bg-slate-900/60 backdrop-blur-sm border-pink-500/30 p-6 h-full relative">
+            <div className="absolute top-4 left-4 z-10">
+              <h2 className="text-white text-xl font-bold flex items-center gap-2">
+                🎤 Asientos de Voz
+              </h2>
+            </div>
+
+            {/* Circle of Seats */}
+            <div className="relative w-full h-full min-h-[500px]">
+              {room.seats.map((seat, index) => {
+                const position = getSeatPosition(index);
+                const isSpeaking = speakingUsers.has(index);
+                const isMuted = seat?.is_muted || false;
+                
+                return (
+                  <div
+                    key={index}
+                    onClick={() => !seat && handleJoinSeat(index)}
+                    className="absolute transform -translate-x-1/2 -translate-y-1/2"
+                    style={{ left: position.left, top: position.top }}
+                  >
+                    <div className={`relative ${!seat && 'cursor-pointer'}`}>
+                      {/* Seat Container */}
+                      <div
+                        className={`
+                          ${seat
+                            ? 'bg-gradient-to-br from-purple-600/40 to-pink-600/40 border-pink-500'
+                            : 'bg-slate-800/60 border-slate-600 hover:border-pink-500/50 hover:bg-slate-700/60'
+                          }
+                          border-2 rounded-2xl p-3 w-24 h-24 flex flex-col items-center justify-center
+                          transition-all duration-300
+                          ${isSpeaking && seat ? 'ring-4 ring-green-400 ring-opacity-75 animate-pulse' : ''}
+                        `}
+                      >
+                        {seat ? (
+                          <>
+                            {/* Avatar with speaking animation */}
+                            <div className={`relative ${isSpeaking ? 'animate-pulse' : ''}`}>
+                              <img
+                                src={seat.avatar}
+                                alt={seat.username}
+                                className={`w-12 h-12 rounded-full border-2 ${
+                                  isSpeaking ? 'border-green-400' : 'border-pink-400'
+                                }`}
+                              />
+                              {isSpeaking && (
+                                <div className="absolute inset-0 rounded-full bg-green-400/20 animate-ping"></div>
+                              )}
+                            </div>
+                            
+                            {/* Username */}
+                            <span className="text-white text-xs font-semibold mt-1 truncate w-full text-center">
+                              {seat.username.substring(0, 8)}
+                            </span>
+                            
+                            {/* Microphone Icon */}
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                toggleMute(index);
+                              }}
+                              className={`absolute -bottom-2 -right-2 w-8 h-8 rounded-full flex items-center justify-center transition-all ${
+                                isMuted 
+                                  ? 'bg-red-500 hover:bg-red-600' 
+                                  : 'bg-green-500 hover:bg-green-600'
+                              }`}
+                            >
+                              {isMuted ? '🔇' : '🎤'}
+                            </button>
+                          </>
+                        ) : (
+                          <>
+                            <div className="text-3xl mb-1">🪑</div>
+                            <span className="text-gray-400 text-xs">Asiento {index + 1}</span>
+                          </>
+                        )}
+                      </div>
                     </div>
-                  )}
+                  </div>
+                );
+              })}
+
+              {/* Center decoration */}
+              <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2">
+                <div className="w-32 h-32 rounded-full bg-gradient-to-br from-purple-600/20 to-pink-600/20 border-2 border-pink-500/30 flex items-center justify-center">
+                  <div className="text-center">
+                    <div className="text-4xl mb-2">☔</div>
+                    <div className="text-white text-xs font-bold">Lluvia Live</div>
+                  </div>
                 </div>
-              ))}
+              </div>
             </div>
           </Card>
         </div>
 
         {/* Chat Section */}
-        <div className="md:col-span-1">
-          <Card className="bg-slate-900/50 backdrop-blur-sm border-pink-500/20 p-4 h-full flex flex-col">
-            <h2 className="text-white text-xl font-bold mb-4">Chat</h2>
+        <div className="lg:col-span-1">
+          <Card className="bg-slate-900/60 backdrop-blur-sm border-pink-500/30 p-4 h-full flex flex-col">
+            <h2 className="text-white text-xl font-bold mb-4 flex items-center gap-2">
+              💬 Chat
+            </h2>
             
-            <ScrollArea className="flex-1 mb-4">
+            {/* Gift Buttons */}
+            <div className="mb-4 p-3 bg-gradient-to-r from-purple-600/20 to-pink-600/20 rounded-lg border border-pink-500/30">
+              <p className="text-white text-sm font-bold mb-2">🎁 Enviar Regalo</p>
+              <div className="flex gap-2 flex-wrap">
+                {gifts.slice(0, 4).map((gift) => (
+                  <Button
+                    key={gift.id}
+                    onClick={() => handleSendGift(gift)}
+                    className="flex-1 bg-gradient-to-r from-yellow-500 to-orange-500 hover:from-yellow-600 hover:to-orange-600 text-white font-bold text-xs p-2"
+                    disabled={userCoins < gift.price}
+                  >
+                    <div className="flex flex-col items-center">
+                      <span className="text-lg">{gift.emoji}</span>
+                      <span className="text-xs">{gift.price}</span>
+                    </div>
+                  </Button>
+                ))}
+              </div>
+            </div>
+
+            {/* Messages */}
+            <ScrollArea className="flex-1 mb-4 pr-4">
               <div className="space-y-2">
                 {messages.map((msg) => (
-                  <div key={msg.id} className="bg-slate-800/50 rounded-lg p-2">
+                  <div
+                    key={msg.id}
+                    className={`rounded-lg p-2 ${
+                      msg.type === 'gift'
+                        ? 'bg-gradient-to-r from-yellow-500/20 to-orange-500/20 border border-yellow-500/50'
+                        : 'bg-slate-800/50'
+                    }`}
+                  >
                     <div className="flex items-center gap-2 mb-1">
                       <img
                         src={msg.user_avatar}
@@ -165,12 +378,16 @@ const RoomView = ({ currentUser, API }) => {
                         <span className="text-yellow-400 text-xs">👑</span>
                       )}
                     </div>
-                    <p className="text-white text-sm ml-8">{msg.message}</p>
+                    <p className="text-white text-sm ml-8">
+                      {msg.type === 'gift' && <span className="text-xl mr-2">🎁</span>}
+                      {msg.message}
+                    </p>
                   </div>
                 ))}
               </div>
             </ScrollArea>
 
+            {/* Message Input */}
             <div className="flex gap-2">
               <Input
                 value={newMessage}
@@ -181,9 +398,9 @@ const RoomView = ({ currentUser, API }) => {
               />
               <Button
                 onClick={handleSendMessage}
-                className="bg-gradient-to-r from-pink-500 to-purple-500"
+                className="bg-gradient-to-r from-pink-500 to-purple-500 hover:from-pink-600 hover:to-purple-600"
               >
-                Enviar
+                ✉️
               </Button>
             </div>
           </Card>

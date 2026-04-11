@@ -13,6 +13,20 @@ import PerfilTab from '@/components/tabs/PerfilTab';
 const Dashboard = ({ currentUser, onLogout, API }) => {
   const [activeTab, setActiveTab] = useState('salas');
   const [searchQuery, setSearchQuery] = useState('');
+  const [userCoins, setUserCoins] = useState(currentUser?.coins || 0);
+
+  useEffect(() => {
+    loadUserCoins();
+  }, []);
+
+  const loadUserCoins = async () => {
+    try {
+      const response = await axios.get(`${API}/users/${currentUser.id}`);
+      setUserCoins(response.data.coins);
+    } catch (error) {
+      console.error('Error loading user coins:', error);
+    }
+  };
 
   const tabs = [
     { id: 'salas', label: '🏠 Salas', icon: '🏠' },
@@ -58,7 +72,7 @@ const Dashboard = ({ currentUser, onLogout, API }) => {
             {/* User Info */}
             <div className="flex items-center gap-4">
               <div className="flex items-center gap-2 bg-yellow-500/20 px-4 py-2 rounded-full border border-yellow-500/50">
-                <span className="text-yellow-400 font-bold">💰 {currentUser.coins}</span>
+                <span className="text-yellow-400 font-bold">💰 {userCoins.toLocaleString()}</span>
               </div>
               <div className="flex items-center gap-2">
                 <span className="text-white font-semibold">{currentUser.username}</span>
