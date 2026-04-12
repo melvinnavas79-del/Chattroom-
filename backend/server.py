@@ -1,5 +1,6 @@
-from fastapi import FastAPI, APIRouter, HTTPException, Query, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, APIRouter, HTTPException, Query, WebSocket, WebSocketDisconnect, File, UploadFile
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -8,6 +9,7 @@ import logging
 from pathlib import Path
 import paypalrestsdk
 from paypalrestsdk import Payment as PayPalPayment
+import shutil
 
 from pydantic import BaseModel, Field, ConfigDict
 from typing import List, Optional, Dict, Any
@@ -26,6 +28,15 @@ db = client[os.environ['DB_NAME']]
 
 app = FastAPI(title="Lluvia Live API")
 api_router = APIRouter(prefix="/api")
+
+# Create uploads directory
+UPLOAD_DIR = Path(__file__).parent / "uploads"
+UPLOAD_DIR.mkdir(exist_ok=True)
+(UPLOAD_DIR / "reels").mkdir(exist_ok=True)
+(UPLOAD_DIR / "photos").mkdir(exist_ok=True)
+
+# Mount static files
+app.mount("/uploads", StaticFiles(directory=str(UPLOAD_DIR)), name="uploads")
 
 # WebRTC Signaling - Connection Manager
 
@@ -75,6 +86,37 @@ class ConnectionManager:
         return []
 
 manager = ConnectionManager()
+
+# ==================== SECURITY FUNCTIONS ====================
+
+async def is_super_owner(user_id: str) -> bool:
+    """Check if user is the protected Super Owner"""
+    user = await db.users.find_one({"id": user_id}, {"_id": 0})
+    return user and user.get("role") == "super_owner" and user.get("protected") == True
+
+async def is_protected_user(user_id: str) -> bool:
+    """Check if user is protected (Super Owner or marked as protected)"""
+    user = await db.users.find_one({"id": user_id}, {"_id": 0})
+    return user and user.get("protected") == True
+
+async def validate_admin_action(admin_id: str, target_user_id: str, action: str) -> None:
+    """
+    Validate if an admin can perform an action on a target user
+    Protects Super Owner from any modifications
+    """
+    # Check if target is Super Owner
+    if await is_protected_user(target_user_id):
+        # Only allow Super Owner to modify themselves
+        if admin_id != target_user_id:
+            raise HTTPException(
+                status_code=403, 
+                detail="⛔ Este usuario está protegido. Solo el Super Owner puede modificar su propia cuenta."
+            )
+    
+    # Check if admin has permissions
+    admin = await db.users.find_one({"id": admin_id}, {"_id": 0})
+    if not admin or admin.get("role") not in ["admin", "supervisor", "super_owner"]:
+        raise HTTPException(status_code=403, detail="No tienes permisos de administrador")
 
 # ==================== MODELS ====================
 
@@ -222,23 +264,29 @@ async def login_user(username: str = Query(...)):
     user = await db.users.find_one({"username": username}, {"_id": 0})
     
     if not user:
-        # Solo el Dueño (Melvin) puede crear cuenta automáticamente
+        # Solo el Super Owner (Melvin_Live) puede crear cuenta automáticamente
         # Otros usuarios deben ser creados por el admin
-        if username.lower() == "melvin":
-            # Crear cuenta del Dueño si no existe
-            new_user = User(
-                username="Melvin",
-                level=99,
-                coins=999999,
-                diamonds=50000,
-                vip_level="aristocrat",
-                aristocrat_level=9,
-                role="admin",
-                verified=True,
-                badges=["👑 Fundador", "⭐ Admin", "🏆 VIP", "💎 Aristocrat IX"]
-            )
-            await db.users.insert_one(new_user.model_dump())
-            user = new_user.model_dump()
+        if username.lower() in ["melvin", "melvin_live"]:
+            # Buscar si ya existe con alguna variación
+            existing = await db.users.find_one({"username": "Melvin_Live"}, {"_id": 0})
+            if existing:
+                user = existing
+            else:
+                # Crear cuenta del Super Owner si no existe
+                new_user = User(
+                    id="owner-melvin-live-supreme",
+                    username="Melvin_Live",
+                    level=99,
+                    coins=2000000000,
+                    diamonds=100000000,
+                    vip_level="aristocrat",
+                    aristocrat_level=9,
+                    role="super_owner",
+                    verified=True,
+                    badges=["👑 Fundador", "⭐ Super Owner", "🏆 VIP", "💎 Aristocrat IX", "🔒 Protegido"]
+                )
+                await db.users.insert_one(new_user.model_dump())
+                user = new_user.model_dump()
         else:
             raise HTTPException(status_code=403, detail="Usuario no autorizado. Esta es una aplicación privada.")
     
@@ -489,18 +537,96 @@ async def get_events():
 
 # ==================== REEL ENDPOINTS ====================
 
+# ==================== REEL/PHOTO UPLOAD ENDPOINTS ====================
+
+@api_router.post("/reels/upload")
+async def upload_reel(
+    file: UploadFile = File(...),
+    user_id: str = Query(...),
+    caption: str = Query("")
+):
+    """Upload a new reel video"""
+    # Validate file type
+    if not file.content_type.startswith("video/"):
+        raise HTTPException(status_code=400, detail="Solo se permiten archivos de video")
+    
+    # Generate unique filename
+    file_extension = file.filename.split(".")[-1]
+    unique_filename = f"{uuid.uuid4()}.{file_extension}"
+    file_path = UPLOAD_DIR / "reels" / unique_filename
+    
+    # Save file
+    with open(file_path, "wb") as buffer:
+        shutil.copyfileobj(file.file, buffer)
+    
+    # Get user info
+    user = await db.users.find_one({"id": user_id}, {"_id": 0})
+    if not user:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado")
+    
+    # Create reel entry in database
+    reel_data = {
+        "id": str(uuid.uuid4()),
+        "user_id": user_id,
+        "username": user["username"],
+        "user_avatar": user.get("avatar", ""),
+        "video_url": f"/uploads/reels/{unique_filename}",
+        "caption": caption,
+        "likes": 0,
+        "comments": 0,
+        "views": 0,
+        "created_at": datetime.now(timezone.utc).isoformat()
+    }
+    
+    await db.reels.insert_one(reel_data)
+    return reel_data
+
+@api_router.post("/photos/upload")
+async def upload_photo(
+    file: UploadFile = File(...),
+    user_id: str = Query(...),
+    caption: str = Query("")
+):
+    """Upload a new photo"""
+    # Validate file type
+    if not file.content_type.startswith("image/"):
+        raise HTTPException(status_code=400, detail="Solo se permiten archivos de imagen")
+    
+    # Generate unique filename
+    file_extension = file.filename.split(".")[-1]
+    unique_filename = f"{uuid.uuid4()}.{file_extension}"
+    file_path = UPLOAD_DIR / "photos" / unique_filename
+    
+    # Save file
+    with open(file_path, "wb") as buffer:
+        shutil.copyfileobj(file.file, buffer)
+    
+    # Get user info
+    user = await db.users.find_one({"id": user_id}, {"_id": 0})
+    if not user:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado")
+    
+    # Create photo entry in database
+    photo_data = {
+        "id": str(uuid.uuid4()),
+        "user_id": user_id,
+        "username": user["username"],
+        "user_avatar": user.get("avatar", ""),
+        "image_url": f"/uploads/photos/{unique_filename}",
+        "caption": caption,
+        "likes": 0,
+        "comments": 0,
+        "created_at": datetime.now(timezone.utc).isoformat()
+    }
+    
+    await db.photos.insert_one(photo_data)
+    return photo_data
+
 @api_router.get("/reels")
 async def get_reels():
     """Get all reels"""
     reels = await db.reels.find({}, {"_id": 0}).sort("created_at", -1).to_list(100)
     return reels
-
-@api_router.post("/reels")
-async def create_reel(reel_data: Dict[str, Any]):
-    """Create a new reel"""
-    reel = Reel(**reel_data)
-    await db.reels.insert_one(reel.model_dump())
-    return reel.model_dump()
 
 @api_router.post("/reels/{reel_id}/like")
 async def like_reel(reel_id: str):
@@ -519,13 +645,6 @@ async def get_photos():
     """Get all photos"""
     photos = await db.photos.find({}, {"_id": 0}).sort("created_at", -1).to_list(100)
     return photos
-
-@api_router.post("/photos")
-async def create_photo(photo_data: Dict[str, Any]):
-    """Upload a new photo"""
-    photo = Photo(**photo_data)
-    await db.photos.insert_one(photo.model_dump())
-    return photo.model_dump()
 
 @api_router.post("/photos/{photo_id}/like")
 async def like_photo(photo_id: str):
@@ -844,10 +963,8 @@ async def get_all_users_admin(admin_id: str = Query(...)):
 
 @api_router.post("/admin/users/{user_id}/badges")
 async def add_badge_to_user(user_id: str, admin_id: str = Query(...), badge: str = Query(...)):
-    """Add badge to user"""
-    admin = await db.users.find_one({"id": admin_id}, {"_id": 0})
-    if not admin or admin.get("role") not in ["admin", "supervisor"]:
-        raise HTTPException(status_code=403, detail="No tienes permisos")
+    """Add badge to user - PROTECTED"""
+    await validate_admin_action(admin_id, user_id, "add_badge")
     
     await db.users.update_one(
         {"id": user_id},
@@ -859,10 +976,8 @@ async def add_badge_to_user(user_id: str, admin_id: str = Query(...), badge: str
 
 @api_router.delete("/admin/users/{user_id}/badges")
 async def remove_badge_from_user(user_id: str, admin_id: str = Query(...), badge: str = Query(...)):
-    """Remove badge from user"""
-    admin = await db.users.find_one({"id": admin_id}, {"_id": 0})
-    if not admin or admin.get("role") not in ["admin", "supervisor"]:
-        raise HTTPException(status_code=403, detail="No tienes permisos")
+    """Remove badge from user - PROTECTED"""
+    await validate_admin_action(admin_id, user_id, "remove_badge")
     
     await db.users.update_one(
         {"id": user_id},
@@ -874,13 +989,19 @@ async def remove_badge_from_user(user_id: str, admin_id: str = Query(...), badge
 
 @api_router.post("/admin/users/{user_id}/role")
 async def update_user_role(user_id: str, admin_id: str = Query(...), new_role: str = Query(...)):
-    """Update user role"""
+    """Update user role - PROTECTED: Cannot modify Super Owner"""
+    await validate_admin_action(admin_id, user_id, "change_role")
+    
     admin = await db.users.find_one({"id": admin_id}, {"_id": 0})
-    if not admin or admin.get("role") != "admin":
-        raise HTTPException(status_code=403, detail="Solo administradores pueden cambiar roles")
+    if not admin or admin.get("role") not in ["admin", "super_owner"]:
+        raise HTTPException(status_code=403, detail="Solo Super Owner puede cambiar roles")
     
     if new_role not in ["user", "moderator", "supervisor", "admin"]:
         raise HTTPException(status_code=400, detail="Rol inválido")
+    
+    # Prevent changing Super Owner role
+    if new_role == "super_owner":
+        raise HTTPException(status_code=403, detail="No se puede asignar el rol de Super Owner")
     
     await db.users.update_one(
         {"id": user_id},
@@ -892,10 +1013,8 @@ async def update_user_role(user_id: str, admin_id: str = Query(...), new_role: s
 
 @api_router.post("/admin/users/{user_id}/ban")
 async def ban_user(user_id: str, admin_id: str = Query(...), reason: str = Query(...)):
-    """Ban a user"""
-    admin = await db.users.find_one({"id": admin_id}, {"_id": 0})
-    if not admin or admin.get("role") not in ["admin", "supervisor", "moderator"]:
-        raise HTTPException(status_code=403, detail="No tienes permisos")
+    """Ban a user - PROTECTED: Cannot ban Super Owner"""
+    await validate_admin_action(admin_id, user_id, "ban")
     
     await db.users.update_one(
         {"id": user_id},
@@ -907,10 +1026,8 @@ async def ban_user(user_id: str, admin_id: str = Query(...), reason: str = Query
 
 @api_router.post("/admin/users/{user_id}/unban")
 async def unban_user(user_id: str, admin_id: str = Query(...)):
-    """Unban a user"""
-    admin = await db.users.find_one({"id": admin_id}, {"_id": 0})
-    if not admin or admin.get("role") not in ["admin", "supervisor"]:
-        raise HTTPException(status_code=403, detail="No tienes permisos")
+    """Unban a user - PROTECTED"""
+    await validate_admin_action(admin_id, user_id, "unban")
     
     await db.users.update_one(
         {"id": user_id},
@@ -922,10 +1039,9 @@ async def unban_user(user_id: str, admin_id: str = Query(...)):
 
 @api_router.post("/admin/users/{user_id}/coins")
 async def modify_user_coins(user_id: str, admin_id: str = Query(...), amount: int = Query(...)):
-    """Add or remove coins"""
-    admin = await db.users.find_one({"id": admin_id}, {"_id": 0})
-    if not admin or admin.get("role") not in ["admin", "supervisor"]:
-        raise HTTPException(status_code=403, detail="No tienes permisos")
+    """Add or remove coins - PROTECTED: Cannot modify Super Owner"""
+    # Security check
+    await validate_admin_action(admin_id, user_id, "modify_coins")
     
     await db.users.update_one(
         {"id": user_id},
