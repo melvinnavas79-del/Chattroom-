@@ -1,6 +1,5 @@
-from fastapi import FastAPI, APIRouter, HTTPException, Query, WebSocket, WebSocketDisconnect, File, UploadFile
+from fastapi import FastAPI, APIRouter, HTTPException, Query, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
-from fastapi.staticfiles import StaticFiles
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -9,7 +8,6 @@ import logging
 from pathlib import Path
 import paypalrestsdk
 from paypalrestsdk import Payment as PayPalPayment
-import shutil
 
 from pydantic import BaseModel, Field, ConfigDict
 from typing import List, Optional, Dict, Any
@@ -28,15 +26,6 @@ db = client[os.environ['DB_NAME']]
 
 app = FastAPI(title="Lluvia Live API")
 api_router = APIRouter(prefix="/api")
-
-# Create uploads directory
-UPLOAD_DIR = Path(__file__).parent / "uploads"
-UPLOAD_DIR.mkdir(exist_ok=True)
-(UPLOAD_DIR / "reels").mkdir(exist_ok=True)
-(UPLOAD_DIR / "photos").mkdir(exist_ok=True)
-
-# Mount static files
-app.mount("/uploads", StaticFiles(directory=str(UPLOAD_DIR)), name="uploads")
 
 # WebRTC Signaling - Connection Manager
 
@@ -536,91 +525,6 @@ async def get_events():
     return events
 
 # ==================== REEL ENDPOINTS ====================
-
-# ==================== REEL/PHOTO UPLOAD ENDPOINTS ====================
-
-@api_router.post("/reels/upload")
-async def upload_reel(
-    file: UploadFile = File(...),
-    user_id: str = Query(...),
-    caption: str = Query("")
-):
-    """Upload a new reel video"""
-    # Validate file type
-    if not file.content_type.startswith("video/"):
-        raise HTTPException(status_code=400, detail="Solo se permiten archivos de video")
-    
-    # Generate unique filename
-    file_extension = file.filename.split(".")[-1]
-    unique_filename = f"{uuid.uuid4()}.{file_extension}"
-    file_path = UPLOAD_DIR / "reels" / unique_filename
-    
-    # Save file
-    with open(file_path, "wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
-    
-    # Get user info
-    user = await db.users.find_one({"id": user_id}, {"_id": 0})
-    if not user:
-        raise HTTPException(status_code=404, detail="Usuario no encontrado")
-    
-    # Create reel entry in database
-    reel_data = {
-        "id": str(uuid.uuid4()),
-        "user_id": user_id,
-        "username": user["username"],
-        "user_avatar": user.get("avatar", ""),
-        "video_url": f"/uploads/reels/{unique_filename}",
-        "caption": caption,
-        "likes": 0,
-        "comments": 0,
-        "views": 0,
-        "created_at": datetime.now(timezone.utc).isoformat()
-    }
-    
-    await db.reels.insert_one(reel_data)
-    return reel_data
-
-@api_router.post("/photos/upload")
-async def upload_photo(
-    file: UploadFile = File(...),
-    user_id: str = Query(...),
-    caption: str = Query("")
-):
-    """Upload a new photo"""
-    # Validate file type
-    if not file.content_type.startswith("image/"):
-        raise HTTPException(status_code=400, detail="Solo se permiten archivos de imagen")
-    
-    # Generate unique filename
-    file_extension = file.filename.split(".")[-1]
-    unique_filename = f"{uuid.uuid4()}.{file_extension}"
-    file_path = UPLOAD_DIR / "photos" / unique_filename
-    
-    # Save file
-    with open(file_path, "wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
-    
-    # Get user info
-    user = await db.users.find_one({"id": user_id}, {"_id": 0})
-    if not user:
-        raise HTTPException(status_code=404, detail="Usuario no encontrado")
-    
-    # Create photo entry in database
-    photo_data = {
-        "id": str(uuid.uuid4()),
-        "user_id": user_id,
-        "username": user["username"],
-        "user_avatar": user.get("avatar", ""),
-        "image_url": f"/uploads/photos/{unique_filename}",
-        "caption": caption,
-        "likes": 0,
-        "comments": 0,
-        "created_at": datetime.now(timezone.utc).isoformat()
-    }
-    
-    await db.photos.insert_one(photo_data)
-    return photo_data
 
 @api_router.get("/reels")
 async def get_reels():
