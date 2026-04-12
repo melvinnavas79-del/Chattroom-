@@ -37,7 +37,7 @@ export const useWebRTC = (roomId, currentUser, API) => {
       localStreamRef.current = stream;
 
       // Connect to signaling server
-      const wsUrl = API.replace('http', 'ws').replace('/api', '');
+      const wsUrl = API.replace('https', 'wss').replace('http', 'ws').replace('/api', '');
       wsRef.current = new WebSocket(`${wsUrl}/ws/room/${roomId}/${currentUser.id}`);
 
       wsRef.current.onopen = () => {

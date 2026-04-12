@@ -216,6 +216,9 @@ async def root():
 @api_router.post("/users/login")
 async def login_user(username: str = Query(...)):
     """Login or create user"""
+    # Limpiar espacios del username
+    username = username.strip()
+    
     user = await db.users.find_one({"username": username}, {"_id": 0})
     
     if not user:
@@ -238,6 +241,10 @@ async def login_user(username: str = Query(...)):
             user = new_user.model_dump()
         else:
             raise HTTPException(status_code=403, detail="Usuario no autorizado. Esta es una aplicación privada.")
+    
+    # Verificar si el usuario está baneado
+    if user.get("banned", False):
+        raise HTTPException(status_code=403, detail=f"Usuario baneado. Razón: {user.get('ban_reason', 'No especificada')}")
     
     return user
 
