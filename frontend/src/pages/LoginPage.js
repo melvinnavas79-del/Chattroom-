@@ -10,6 +10,7 @@ const LoginPage = ({ onLogin, API }) => {
   // Clear any old session data on mount
   useEffect(() => {
     localStorage.removeItem('lluvia_user');
+    localStorage.removeItem('lluvia_login_at');
   }, []);
 
   const handleLogin = async () => {
