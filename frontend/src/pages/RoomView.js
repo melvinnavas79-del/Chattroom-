@@ -111,13 +111,13 @@ const RoomView = ({ currentUser, API }) => {
     toggleMute();
   };
 
-  const handleToggleSpeaker = () => {
-    // Mutear/desmutear todos los audios remotos
-    const audioElements = document.querySelectorAll('audio');
-    audioElements.forEach(audio => {
-      audio.muted = !audio.muted;
-    });
-  };
+  const handleToggleMute = async (seatIndex) => {
+    if (!room?.seats[seatIndex]) return;
+    
+    const seats = [...room.seats];
+    if (seats[seatIndex].user_id === currentUser.id) {
+      // Toggle mute via WebRTC
+      toggleMute();
       
       seats[seatIndex].is_muted = !seats[seatIndex].is_muted;
       
