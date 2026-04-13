@@ -336,41 +336,38 @@ async def join_room(room_id: str, user_id: str = Query(...), seat_index: Optiona
     if not room:
         raise HTTPException(status_code=404, detail="Room not found")
     
-    # Update total members
-    await db.rooms.update_one(
-        {"id": room_id},
-        {"$inc": {"total_members": 1, "active_users": 1}}
-    )
+    user = await db.users.find_one({"id": user_id}, {"_id": 0})
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
     
     # If seat_index provided, try to take seat
     if seat_index is not None:
-        user = await db.users.find_one({"id": user_id}, {"_id": 0})
-        if user:
-            seats = room.get("seats", [None] * 9)
-            
-            # ARREGLO: Primero remover usuario de TODOS los asientos
-            for i in range(len(seats)):
-                if seats[i] and seats[i].get("user_id") == user_id:
-                    if i == seat_index:
-                        # Ya está en este asiento
-                        updated_room = await db.rooms.find_one({"id": room_id}, {"_id": 0})
-                        return updated_room
-                    # Remover del asiento anterior
-                    seats[i] = None
-            
-            # Verificar que el asiento esté libre
-            if seat_index < len(seats) and seats[seat_index] is None:
-                seats[seat_index] = {
-                    "user_id": user_id,
-                    "username": user["username"],
-                    "avatar": user["avatar"],
-                    "level": user["level"],
-                    "is_muted": False
-                }
-                await db.rooms.update_one(
-                    {"id": room_id},
-                    {"$set": {"seats": seats}}
-                )
+        seats = room.get("seats", [None] * 9)
+        
+        # FIX CRÍTICO: Remover usuario de TODOS los asientos primero
+        cleaned_seats = []
+        for i, seat in enumerate(seats):
+            if seat and seat.get("user_id") == user_id:
+                # Remover este usuario de cualquier asiento previo
+                cleaned_seats.append(None)
+            else:
+                cleaned_seats.append(seat)
+        
+        # Verificar que el asiento solicitado esté libre
+        if seat_index < len(cleaned_seats) and cleaned_seats[seat_index] is None:
+            cleaned_seats[seat_index] = {
+                "user_id": user_id,
+                "username": user["username"],
+                "avatar": user.get("avatar", ""),
+                "level": user["level"],
+                "is_muted": False
+            }
+            await db.rooms.update_one(
+                {"id": room_id},
+                {"$set": {"seats": cleaned_seats}}
+            )
+        else:
+            raise HTTPException(status_code=400, detail="Asiento ocupado")
     
     updated_room = await db.rooms.find_one({"id": room_id}, {"_id": 0})
     return updated_room
