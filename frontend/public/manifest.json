@@ -1,0 +1,24 @@
+{
+  "short_name": "Lluvia Live",
+  "name": "Lluvia Live - Salas de Voz en Vivo",
+  "description": "Conecta, Chatea, Vive - La mejor app de salas de voz",
+  "icons": [
+    {
+      "src": "https://api.dicebear.com/7.x/shapes/svg?seed=LluviaLive&backgroundColor=6C63FF",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "https://api.dicebear.com/7.x/shapes/svg?seed=LluviaLive&backgroundColor=6C63FF",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "start_url": ".",
+  "display": "standalone",
+  "theme_color": "#6C63FF",
+  "background_color": "#ffffff",
+  "orientation": "portrait"
+}

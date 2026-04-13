@@ -83,21 +83,41 @@ const RoomView = ({ currentUser, API }) => {
   };
 
   const handleJoinSeat = async (seatIndex) => {
+    // Si ya está en un asiento, primero salir
+    const currentSeatIndex = room?.seats?.findIndex(s => s?.user_id === currentUser.id);
+    if (currentSeatIndex !== -1 && currentSeatIndex !== seatIndex) {
+      await handleLeaveSeat();
+    }
+    
     try {
       const response = await axios.post(`${API}/rooms/${roomId}/join?user_id=${currentUser.id}&seat_index=${seatIndex}`);
       setRoom(response.data);
     } catch (error) {
       console.error('Error joining seat:', error);
+      alert(error.response?.data?.detail || 'No se pudo tomar el asiento');
     }
   };
 
-  const handleToggleMute = async (seatIndex) => {
-    if (!room?.seats[seatIndex]) return;
-    
-    const seats = [...room.seats];
-    if (seats[seatIndex].user_id === currentUser.id) {
-      // Toggle mute via WebRTC
-      toggleMute();
+  const handleLeaveSeat = async () => {
+    try {
+      const response = await axios.post(`${API}/rooms/${roomId}/leave?user_id=${currentUser.id}`);
+      setRoom(response.data);
+    } catch (error) {
+      console.error('Error leaving seat:', error);
+    }
+  };
+
+  const handleToggleMute = () => {
+    toggleMute();
+  };
+
+  const handleToggleSpeaker = () => {
+    // Mutear/desmutear todos los audios remotos
+    const audioElements = document.querySelectorAll('audio');
+    audioElements.forEach(audio => {
+      audio.muted = !audio.muted;
+    });
+  };
       
       seats[seatIndex].is_muted = !seats[seatIndex].is_muted;
       

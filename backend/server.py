@@ -1057,3 +1057,20 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str, user_id: str):
     except Exception as e:
         logging.error(f"WebSocket error for user {user_id} in room {room_id}: {e}")
         manager.disconnect(room_id, user_id)
+
+@api_router.post("/admin/users/{user_id}/aristocracy")
+async def give_aristocracy(user_id: str, admin_id: str = Query(...), level: int = Query(...)):
+    """Give aristocracy level to user - PROTECTED"""
+    await validate_admin_action(admin_id, user_id, "give_aristocracy")
+    
+    if level < 1 or level > 9:
+        raise HTTPException(status_code=400, detail="El nivel debe estar entre 1 y 9")
+    
+    await db.users.update_one(
+        {"id": user_id},
+        {"$set": {"aristocrat_level": level, "vip_level": "aristocrat"}}
+    )
+    
+    user = await db.users.find_one({"id": user_id}, {"_id": 0})
+    return user
+
