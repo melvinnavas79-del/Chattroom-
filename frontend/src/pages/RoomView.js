@@ -107,10 +107,6 @@ const RoomView = ({ currentUser, API }) => {
     }
   };
 
-  const handleToggleMute = () => {
-    toggleMute();
-  };
-
   const handleToggleMute = async (seatIndex) => {
     if (!room?.seats[seatIndex]) return;
     
