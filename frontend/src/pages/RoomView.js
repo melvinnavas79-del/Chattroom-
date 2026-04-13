@@ -21,8 +21,16 @@ const RoomView = ({ currentUser, API }) => {
   const [selectedGift, setSelectedGift] = useState(null);
   const [userCoins, setUserCoins] = useState(currentUser?.coins || 0);
   
-  // WebRTC Audio Hook
-  const { isMuted, isConnected, speakingUsers, toggleMute } = useWebRTC(roomId, currentUser, API);
+  // WebRTC Audio Hook con callback para actualizar asientos
+  const handleSeatsUpdate = (updatedSeats) => {
+    setRoom(prev => ({ ...prev, seats: updatedSeats }));
+  };
+  
+  const { isMuted, isConnected, speakingUsers, toggleMute } = useWebRTC(
+    roomId, 
+    currentUser, 
+    handleSeatsUpdate
+  );
 
   useEffect(() => {
     loadRoomData();

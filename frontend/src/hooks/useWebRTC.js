@@ -68,6 +68,13 @@ export const useWebRTC = (roomId, currentUser, API) => {
 
   const handleSignalingMessage = async (message) => {
     switch (message.type) {
+      case 'seats-updated':
+        // Actualizar asientos en tiempo real
+        if (onSeatsUpdated) {
+          onSeatsUpdated(message.seats);
+        }
+        break;
+        
       case 'existing-users':
         // Create peer connections to existing users
         for (const userId of message.users) {

@@ -366,6 +366,15 @@ async def join_room(room_id: str, user_id: str = Query(...), seat_index: Optiona
                 {"id": room_id},
                 {"$set": {"seats": cleaned_seats}}
             )
+            
+            # BROADCAST a todos en la sala
+            await manager.broadcast_to_room(
+                room_id,
+                {
+                    "type": "seats-updated",
+                    "seats": cleaned_seats
+                }
+            )
         else:
             raise HTTPException(status_code=400, detail="Asiento ocupado")
     
