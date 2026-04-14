@@ -13,10 +13,19 @@ function App() {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    // Check if user is already logged in
+    // Check if user is already logged in and session has not expired (1 hour)
     const savedUser = localStorage.getItem('lluvia_user');
+    const loginAt = localStorage.getItem('lluvia_login_at');
+    const SESSION_DURATION_MS = 60 * 60 * 1000; // 1 hour
     if (savedUser) {
-      setCurrentUser(JSON.parse(savedUser));
+      const elapsed = loginAt ? Date.now() - parseInt(loginAt, 10) : SESSION_DURATION_MS;
+      if (elapsed < SESSION_DURATION_MS) {
+        setCurrentUser(JSON.parse(savedUser));
+      } else {
+        // Session expired or missing timestamp — clear stored data
+        localStorage.removeItem('lluvia_user');
+        localStorage.removeItem('lluvia_login_at');
+      }
     }
     setIsLoading(false);
   }, []);
@@ -24,11 +33,13 @@ function App() {
   const handleLogin = (user) => {
     setCurrentUser(user);
     localStorage.setItem('lluvia_user', JSON.stringify(user));
+    localStorage.setItem('lluvia_login_at', Date.now().toString());
   };
 
   const handleLogout = () => {
     setCurrentUser(null);
     localStorage.removeItem('lluvia_user');
+    localStorage.removeItem('lluvia_login_at');
   };
 
   if (isLoading) {
